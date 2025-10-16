@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Supermercado Online</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+  <h1>Supermercado Online</h1>
+  <div class="container">
+    <div class="left">
+      <section>
+        <h2>Adicionar Produto</h2>
+        <form id="productForm">
+          <input type="hidden" id="IdProduto">
+          <label>
+            Nome:
+            <input type="text" id="NomeProduto" required>
+          </label>
+          <label>
+            Preço:
+            <input type="number" step="0.01" id="Preco" required>
+          </label>
+          <label>
+            Quantidade:
+            <input type="number" id="Quantidade" required>
+          </label>
+          <button type="submit">Salvar</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Produtos</h2>
+        <ul id="products"></ul>
+      </section>
+
+      <section>
+        <h2>Nota Fiscal</h2>
+        <div id="notaFiscal"></div>
+        <button onclick="finalizarCompra()">Finalizar Compra</button>
+      </section>
+    </div>
+
+    <aside class="right">
+      <h2>📜 Histórico de Compras</h2>
+      <ul id="historico"></ul>
+    </aside>
+  </div>
+</main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

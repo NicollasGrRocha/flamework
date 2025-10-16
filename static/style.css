@@ -1,0 +1,179 @@
+/* Reset básico */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  background: #f5f7fa;
+  color: #333;
+  line-height: 1.6;
+  padding: 20px;
+}
+
+main {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+h1 {
+  text-align: center;
+  font-size: 2.2rem;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+
+section {
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  margin-bottom: 25px;
+}
+
+h2 {
+  margin-bottom: 15px;
+  color: #34495e;
+}
+
+label {
+  display: block;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+input, select {
+  width: 100%;
+  padding: 10px 12px;
+  margin-top: 6px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: border 0.3s ease;
+}
+
+input:focus, select:focus {
+  border-color: #3498db;
+  outline: none;
+}
+
+button {
+  display: inline-block;
+  background: #3498db;
+  color: #fff;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+button:hover {
+  background: #2980b9;
+  transform: translateY(-2px);
+}
+
+#products {
+  list-style: none;
+  padding: 0;
+}
+
+#products li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ecf0f1;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+#products li span {
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+#products li input {
+  width: 60px;
+  margin-left: 10px;
+}
+
+#products li button {
+  margin-left: 10px;
+  background: #27ae60;
+}
+
+#products li button.delete {
+  background: #e74c3c;
+}
+
+#products li button:hover {
+  opacity: 0.9;
+}
+
+/* Estilo da nota fiscal */
+.nota {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px dashed #34495e;
+  background: #fff;
+  border-radius: 8px;
+}
+
+#notaFiscal button {
+  margin-top: 15px;
+  background: #2ecc71;
+}
+
+#notaFiscal button:hover {
+  background: #27ae60;
+}
+
+
+.container {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.right {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.right h2 {
+  margin-bottom: 15px;
+  color: #2c3e50;
+}
+
+#historico {
+  list-style: none;
+  padding: 0;
+}
+
+#historico li {
+  background: #ecf0f1;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+
+#historico li strong {
+  display: block;
+  color: #34495e;
+}
