@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Login - Supermercado Online</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .auth-container {
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .error-message {
+            color: red;
+            margin-bottom: 10px;
+        }
+        .toggle-form {
+            text-align: center;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="auth-container">
+            <div id="loginForm">
+                <h2>Login</h2>
+                <form onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label for="loginEmail">Email:</label>
+                        <input type="email" id="loginEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginSenha">Senha:</label>
+                        <input type="password" id="loginSenha" required>
+                    </div>
+                    <div id="loginError" class="error-message"></div>
+                    <button type="submit">Entrar</button>
+                </form>
+                <div class="toggle-form">
+                    <a href="#" onclick="toggleForms()">Criar nova conta</a>
+                </div>
+            </div>
+
+            <div id="registerForm" style="display: none;">
+                <h2>Cadastro</h2>
+                <form onsubmit="handleRegister(event)">
+                    <div class="form-group">
+                        <label for="registerNome">Nome:</label>
+                        <input type="text" id="registerNome" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerEmail">Email:</label>
+                        <input type="email" id="registerEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerSenha">Senha:</label>
+                        <input type="password" id="registerSenha" required minlength="6">
+                    </div>
+                    <div id="registerError" class="error-message"></div>
+                    <button type="submit">Cadastrar</button>
+                </form>
+                <div class="toggle-form">
+                    <a href="#" onclick="toggleForms()">Já tenho uma conta</a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function toggleForms() {
+            const loginForm = document.getElementById('loginForm');
+            const registerForm = document.getElementById('registerForm');
+            
+            if (loginForm.style.display === 'none') {
+                loginForm.style.display = 'block';
+                registerForm.style.display = 'none';
+            } else {
+                loginForm.style.display = 'none';
+                registerForm.style.display = 'block';
+            }
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const senha = document.getElementById('loginSenha').value;
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, senha })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    window.location.href = '/';
+                } else {
+                    document.getElementById('loginError').textContent = data.error || 'Erro ao fazer login';
+                }
+            } catch (error) {
+                document.getElementById('loginError').textContent = 'Erro ao conectar com o servidor';
+            }
+        }
+
+        async function handleRegister(event) {
+            event.preventDefault();
+            const nome = document.getElementById('registerNome').value;
+            const email = document.getElementById('registerEmail').value;
+            const senha = document.getElementById('registerSenha').value;
+            
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ nome, email, senha })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Cadastro realizado com sucesso! Faça login para continuar.');
+                    toggleForms();
+                } else {
+                    document.getElementById('registerError').textContent = data.error || 'Erro ao cadastrar';
+                }
+            } catch (error) {
+                document.getElementById('registerError').textContent = 'Erro ao conectar com o servidor';
+            }
+        }
+    </script>
+</body>
+</html>

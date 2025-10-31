@@ -1,48 +1,95 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_cors import CORS
 import mysql.connector
+import bcrypt
+import re
 from mysql.connector import errorcode
 from datetime import datetime
 
-# --- Configuração do Banco de Dados MySQL ---
+
 DB_CONFIG = {
-    # ATENÇÃO: Substitua pelos seus dados reais do MySQL
     'user': 'root',
     'password': '218101809Luiz.',
     'host': 'localhost',
-    'database': 'db_projeto'# Alterei o nome do DB para refletir o projeto
+    'database': 'db_projeto'
 }
 
 app = Flask(__name__)
-CORS(app)  # Adiciona CORS para permitir o frontend
+CORS(app)
+app.secret_key = 'sua_chave_secreta_aqui'
 
 
-# Função de conexão com o banco
+
+def requer_login(f):
+    def decorador(*args, **kwargs):
+        if 'usuario_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    decorador.__name__ = f.__name__
+    return decorador
+
+
+
+def requer_admin(f):
+    def decorador(*args, **kwargs):
+        if 'usuario_email' not in session or session['usuario_email'] != 'admin@gmail.com':
+            return jsonify({"error": "Acesso negado: apenas o administrador pode realizar esta ação."}), 403
+        return f(*args, **kwargs)
+    decorador.__name__ = f.__name__
+    return decorador
+
+
+# --- Função de conexão ---
 def get_connection():
-    """Cria e retorna uma nova conexão com o banco de dados MySQL."""
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         return conn
     except mysql.connector.Error as err:
-        if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
-            print("Erro de acesso ao MySQL: verifique usuário ou senha.")
-        elif err.errno == errorcode.ER_BAD_DB_ERROR:
-            print(f"O banco de dados '{DB_CONFIG['database']}' não existe.")
+
+        if err.errno == errorcode.ER_BAD_DB_ERROR:
+            print(f"O banco de dados '{DB_CONFIG['database']}' não existe. Tentando criar...")
+            try:
+
+                cfg = DB_CONFIG.copy()
+                cfg.pop('database', None)
+                tmp_conn = mysql.connector.connect(**cfg)
+                tmp_cursor = tmp_conn.cursor()
+                tmp_cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_CONFIG['database']}`")
+                tmp_conn.commit()
+                tmp_cursor.close()
+                tmp_conn.close()
+
+                conn = mysql.connector.connect(**DB_CONFIG)
+                return conn
+            except mysql.connector.Error as err2:
+                print(f"Falha ao criar/abrir o banco: {err2}")
+                return None
+        elif err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+            print("Erro: usuário ou senha incorretos.")
         else:
-            print(f"Erro ao conectar ao MySQL: {err}")
+            print(f"Erro ao conectar: {err}")
         return None
 
 
-# Criar tabelas
+
 def init_db():
     con = get_connection()
     if con is None:
-        print("Falha ao inicializar o DB. Verifique a conexão.")
+        print("Falha ao conectar ao DB.")
         return
 
     cursor = con.cursor()
     try:
-        # 1. Cria a tabela de produtos (Se não existir)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usuarios (
+                IdUsuario INT PRIMARY KEY AUTO_INCREMENT,
+                Email VARCHAR(255) NOT NULL UNIQUE,
+                Senha VARCHAR(255) NOT NULL,
+                Nome VARCHAR(255) NOT NULL,
+                DataCriacao DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS produtos (
                 IdProduto INT PRIMARY KEY AUTO_INCREMENT,
@@ -52,16 +99,16 @@ def init_db():
             )
         """)
 
-        # 2. Cria a tabela de compras (histórico)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS compras (
                 IdCompra INT PRIMARY KEY AUTO_INCREMENT,
+                IdUsuario INT,
                 DataCompra DATETIME NOT NULL,
-                Total DECIMAL(10,2) NOT NULL
+                Total DECIMAL(10,2) NOT NULL,
+                FOREIGN KEY (IdUsuario) REFERENCES usuarios(IdUsuario)
             )
         """)
 
-        # 3. Cria a tabela de itens da compra
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS itens_compra (
                 IdItem INT PRIMARY KEY AUTO_INCREMENT,
@@ -76,23 +123,20 @@ def init_db():
             )
         """)
 
-        # 2. Verifica se a tabela está vazia
         cursor.execute("SELECT COUNT(*) FROM produtos")
         count = cursor.fetchone()[0]
 
         if count == 0:
-            # 3. Adiciona o produto padrão (SE A TABELA ESTIVER VAZIA)
-            print("Adicionando produto padrão para testes...")
             cursor.execute(
                 "INSERT INTO produtos (NomeProduto, Preco, Quantidade) VALUES (%s, %s, %s)",
                 ("Pão de Forma Integral", 8.50, 100)
             )
 
         con.commit()
-        print(f"Tabela 'produtos' verificada/criada com sucesso no MySQL. {count} produto(s) encontrado(s).")
+        print("Banco inicializado com sucesso.")
 
     except mysql.connector.Error as err:
-        print(f"Erro ao criar tabelas ou inserir dados no MySQL: {err}")
+        print(f"Erro ao inicializar DB: {err}")
     finally:
         cursor.close()
         con.close()
@@ -101,41 +145,124 @@ def init_db():
 init_db()
 
 
-# No topo do seu app.py, certifique-se que o render_template está importado:
-# from flask import Flask, render_template, request, jsonify
-# ...
 
 @app.route("/")
+@requer_login
 def index():
-# Histórico de compras em memória (substitua por tabela no futuro)
-    # CORRIGIDO: Agora, ele busca e renderiza o arquivo da pasta 'templates'
     return render_template("index.html")
 
 
-# --- CRUD Produtos ---
+@app.route('/login')
+def login():
+    if 'usuario_id' in session:
+        return redirect(url_for('index'))
+    return render_template('auth.html')
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
+    nome = data.get('nome')
+    email = data.get('email')
+    senha = data.get('senha')
+
+    if not all([nome, email, senha]):
+        return jsonify({'error': 'Todos os campos são obrigatórios'}), 400
+    if len(senha) < 6:
+        return jsonify({'error': 'A senha deve ter pelo menos 6 caracteres'}), 400
+    if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+        return jsonify({'error': 'Email inválido'}), 400
+
+    senha_hash = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt())
+
+    con = get_connection()
+    if con is None:
+        return jsonify({'error': 'Erro de conexão com o banco'}), 500
+
+    cursor = con.cursor()
+    try:
+        cursor.execute('SELECT * FROM usuarios WHERE Email=%s', (email,))
+        if cursor.fetchone():
+            return jsonify({'error': 'Email já cadastrado'}), 400
+
+        cursor.execute('INSERT INTO usuarios (Nome, Email, Senha) VALUES (%s, %s, %s)',
+                       (nome, email, senha_hash))
+        con.commit()
+        return jsonify({'message': 'Usuário cadastrado com sucesso!'})
+    except mysql.connector.Error as err:
+        con.rollback()
+        return jsonify({'error': str(err)}), 500
+    finally:
+        cursor.close()
+        con.close()
+
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.json
+    email = data.get('email')
+    senha = data.get('senha')
+
+    if not all([email, senha]):
+        return jsonify({'error': 'Email e senha são obrigatórios'}), 400
+
+    con = get_connection()
+    if con is None:
+        return jsonify({'error': 'Erro de conexão com o banco'}), 500
+
+    cursor = con.cursor(dictionary=True)
+    cursor.execute('SELECT * FROM usuarios WHERE Email=%s', (email,))
+    usuario = cursor.fetchone()
+
+    if not usuario:
+        return jsonify({'error': 'Email ou senha incorretos'}), 401
+
+    if not bcrypt.checkpw(senha.encode('utf-8'), usuario['Senha'].encode('utf-8')):
+        return jsonify({'error': 'Email ou senha incorretos'}), 401
+
+    session['usuario_id'] = usuario['IdUsuario']
+    session['usuario_nome'] = usuario['Nome']
+    session['usuario_email'] = usuario['Email']
+
+    return jsonify({
+        'message': 'Login realizado com sucesso!',
+        'usuario': {
+            'id': usuario['IdUsuario'],
+            'nome': usuario['Nome'],
+            'email': usuario['Email']
+        }
+    })
+
+
+
 @app.route("/api/products", methods=["GET"])
 def list_products():
     con = get_connection()
-    if con is None: return jsonify({"error": "Erro de conexão com o DB."}), 500
+    if con is None:
+        return jsonify({"error": "Erro de conexão com o DB."}), 500
 
-    # Em MySQL, usamos o cursor(dictionary=True) para obter resultados como dicionário
     cursor = con.cursor(dictionary=True)
     cursor.execute("SELECT * FROM produtos")
     rows = cursor.fetchall()
     con.close()
-
-    # O jsonify já recebe a lista de dicionários diretamente
     return jsonify(rows)
 
 
 @app.route("/api/products", methods=["POST"])
+@requer_admin
 def add_product():
     data = request.json
     con = get_connection()
-    if con is None: return jsonify({"error": "Erro de conexão com o DB."}), 500
+    if con is None:
+        return jsonify({"error": "Erro de conexão com o DB."}), 500
 
     cursor = con.cursor()
-    # No MySQL, usamos %s como placeholder, e não o ? do SQLite
     query = "INSERT INTO produtos (NomeProduto, Preco, Quantidade) VALUES (%s, %s, %s)"
     values = (data["NomeProduto"], data["Preco"], data["Quantidade"])
 
@@ -145,17 +272,19 @@ def add_product():
         return jsonify({"message": "Produto adicionado com sucesso!", "IdProduto": cursor.lastrowid})
     except mysql.connector.Error as err:
         con.rollback()
-        return jsonify({"error": f"Erro ao adicionar produto: {err}"}), 500
+        return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()
         con.close()
 
 
 @app.route("/api/products/<int:id>", methods=["PUT"])
+@requer_admin
 def update_product(id):
     data = request.json
     con = get_connection()
-    if con is None: return jsonify({"error": "Erro de conexão com o DB."}), 500
+    if con is None:
+        return jsonify({"error": "Erro de conexão com o DB."}), 500
 
     cursor = con.cursor()
     query = "UPDATE produtos SET NomeProduto=%s, Preco=%s, Quantidade=%s WHERE IdProduto=%s"
@@ -165,151 +294,137 @@ def update_product(id):
         cursor.execute(query, values)
         con.commit()
         if cursor.rowcount == 0:
-            return jsonify({"message": "Produto não encontrado ou nenhum dado alterado."}), 404
+            return jsonify({"message": "Produto não encontrado."}), 404
         return jsonify({"message": "Produto atualizado com sucesso!"})
     except mysql.connector.Error as err:
         con.rollback()
-        return jsonify({"error": f"Erro ao atualizar produto: {err}"}), 500
+        return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()
         con.close()
 
 
 @app.route("/api/products/<int:id>", methods=["DELETE"])
+@requer_admin
 def delete_product(id):
     con = get_connection()
-    if con is None: return jsonify({"error": "Erro de conexão com o DB."}), 500
+    if con is None:
+        return jsonify({"error": "Erro de conexão com o DB."}), 500
 
     cursor = con.cursor()
-    query = "DELETE FROM produtos WHERE IdProduto=%s"
-
     try:
-        cursor.execute(query, (id,))
+        cursor.execute("DELETE FROM produtos WHERE IdProduto=%s", (id,))
         con.commit()
         if cursor.rowcount == 0:
             return jsonify({"message": "Produto não encontrado."}), 404
         return jsonify({"message": "Produto removido com sucesso!"})
     except mysql.connector.Error as err:
         con.rollback()
-        return jsonify({"error": f"Erro ao remover produto: {err}"}), 500
+        return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()
         con.close()
 
 
-# --- Compra ---
+# --- Registrar compra ---
 @app.route("/api/purchase", methods=["POST"])
 def purchase():
+    if 'usuario_id' not in session:
+        return jsonify({"error": "Usuário não autenticado."}), 401
+
     data = request.json
     if 'cart' not in data or not isinstance(data['cart'], list):
-        return jsonify({"error": "Dados inválidos: 'cart' é obrigatório e deve ser uma lista."}), 400
+        return jsonify({"error": "Carrinho inválido."}), 400
 
+    usuario_id = session['usuario_id']
     con = get_connection()
-    if con is None: return jsonify({"error": "Erro de conexão com o DB."}), 500
-
     cursor = con.cursor()
     total = 0
     items = []
 
     try:
-        # Inicia a transação para garantir que o estoque só seja atualizado se a compra for bem-sucedida
         con.start_transaction()
-
         for item in data["cart"]:
-            product_id = item.get("IdProduto")
-            quantity = item.get("Quantidade")
-
-            if not product_id or not quantity or quantity <= 0:
-                con.rollback()
-                return jsonify(
-                    {"error": "Item do carrinho inválido (IdProduto e Quantidade > 0 são obrigatórios)."}), 400
-
-            # 1. Busca o produto e bloqueia a linha (FOR UPDATE)
             cursor.execute("SELECT NomeProduto, Preco, Quantidade FROM produtos WHERE IdProduto=%s FOR UPDATE",
-                           (product_id,))
-            product = cursor.fetchone()
-
-            if not product:
+                           (item["IdProduto"],))
+            produto = cursor.fetchone()
+            if not produto:
                 con.rollback()
-                return jsonify({"error": f"Produto com ID {product_id} não encontrado."}), 404
-
-            # product é uma tupla: (NomeProduto, Preco, Quantidade)
-            nome, preco, estoque = product
-
-            if estoque < quantity:
+                return jsonify({"error": "Produto não encontrado."}), 404
+            nome, preco, estoque = produto
+            if estoque < item["Quantidade"]:
                 con.rollback()
-                return jsonify({"error": f"Estoque insuficiente para {nome}! Disponível: {estoque}"}), 400
+                return jsonify({"error": f"Estoque insuficiente para {nome}."}), 400
 
-            # 2. Calcula subtotal
-            # É melhor garantir que o cálculo seja feito com valores numéricos para evitar erros
-            subtotal = float(preco) * quantity
+            subtotal = float(preco) * item["Quantidade"]
             total += subtotal
             items.append({
-                "IdProduto": product_id,
+                "IdProduto": item["IdProduto"],
                 "NomeProduto": nome,
                 "Preco": float(preco),
-                "Quantidade": quantity,
-                "Subtotal": round(subtotal, 2)
+                "Quantidade": item["Quantidade"],
+                "Subtotal": subtotal
             })
 
-            # 3. Atualiza estoque
-            cursor.execute("UPDATE produtos SET Quantidade = Quantidade - %s WHERE IdProduto=%s",
-                           (quantity, product_id))
+            cursor.execute("UPDATE produtos SET Quantidade=Quantidade-%s WHERE IdProduto=%s",
+                           (item["Quantidade"], item["IdProduto"]))
 
-        # Se tudo ocorreu bem, confirma todas as mudanças
-        con.commit()
-
-        # Salva a compra no banco de dados (dentro da mesma transação)
         data_compra = datetime.now()
-        cursor.execute(
-            "INSERT INTO compras (DataCompra, Total) VALUES (%s, %s)",
-            (data_compra, round(total, 2))
-        )
+        cursor.execute("INSERT INTO compras (IdUsuario, DataCompra, Total) VALUES (%s, %s, %s)",
+                       (usuario_id, data_compra, total))
         id_compra = cursor.lastrowid
 
-        # Insere os itens da compra
         for item in items:
-            if item.get("IdProduto") is None:
-                con.rollback()
-                return jsonify({"error": "IdProduto não pode ser nulo ao registrar item da compra."}), 400
-            cursor.execute(
-                "INSERT INTO itens_compra (IdCompra, IdProduto, NomeProduto, Preco, Quantidade, Subtotal) VALUES (%s, %s, %s, %s, %s, %s)",
-                (id_compra, item["IdProduto"], item["NomeProduto"], item["Preco"], item["Quantidade"], item["Subtotal"])
-            )
+            cursor.execute("""
+                INSERT INTO itens_compra (IdCompra, IdProduto, NomeProduto, Preco, Quantidade, Subtotal)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (id_compra, item["IdProduto"], item["NomeProduto"], item["Preco"], item["Quantidade"], item["Subtotal"]))
+
         con.commit()
 
     except mysql.connector.Error as err:
         con.rollback()
-        return jsonify({"error": f"Erro na transação: {err}"}), 500
+        return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()
         con.close()
 
-    nota = {
+    return jsonify({
         "itens": items,
         "total": round(total, 2),
         "data": data_compra.strftime("%d/%m/%Y %H:%M:%S")
-    }
-    return jsonify(nota)
-# Rota para histórico de compras
+    })
+
+
+# --- Histórico de compras ---
 @app.route("/api/history", methods=["GET"])
 def get_history():
+    if 'usuario_id' not in session:
+        return jsonify({"error": "Usuário não autenticado."}), 401
+
+    usuario_id = session['usuario_id']
+    usuario_email = session.get('usuario_email')
+
     con = get_connection()
-    if con is None:
-        return jsonify([])
     cursor = con.cursor(dictionary=True)
-    # Busca as compras mais recentes primeiro
-    cursor.execute("SELECT * FROM compras ORDER BY DataCompra DESC")
+
+    if usuario_email == 'admin@gmail.com':
+        cursor.execute("SELECT * FROM compras ORDER BY DataCompra DESC")
+    else:
+        cursor.execute("SELECT * FROM compras WHERE IdUsuario=%s ORDER BY DataCompra DESC", (usuario_id,))
+
     compras = cursor.fetchall()
     historico = []
     for compra in compras:
-        cursor.execute("SELECT NomeProduto, Preco, Quantidade, Subtotal FROM itens_compra WHERE IdCompra=%s", (compra["IdCompra"],))
+        cursor.execute("SELECT NomeProduto, Preco, Quantidade, Subtotal FROM itens_compra WHERE IdCompra=%s",
+                       (compra["IdCompra"],))
         itens = cursor.fetchall()
         historico.append({
             "data": compra["DataCompra"].strftime("%d/%m/%Y %H:%M:%S"),
             "total": float(compra["Total"]),
             "itens": itens
         })
+
     cursor.close()
     con.close()
     return jsonify(historico)
