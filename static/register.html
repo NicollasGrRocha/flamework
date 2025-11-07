@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadastro - Get Stock</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Cadastro</h1>
+      <section class="card">
+        <form id="register-form">
+          <label>Nome<br /><input type="text" id="nome" name="nome" required /></label>
+          <label>Email<br /><input type="email" id="email" name="email" required /></label>
+          <label>Senha<br /><input type="password" id="password" name="password" required /></label>
+          <label>Confirmar Senha<br /><input type="password" id="password-confirm" required /></label>
+          <button type="submit" class="btn">Prosseguir para Verificação</button>
+        </form>
+        <div id="register-message" class="message"></div>
+        <p style="margin-top:12px">Já tem conta? <a href="/static/login.html">Entrar</a></p>
+      </section>
+    </div>
+
+    <script>
+      const API_BASE = '';
+      document.getElementById('register-form').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const msg = document.getElementById('register-message');
+        msg.style.color = 'blue';
+        msg.textContent = 'Validando dados...';
+
+        const nome = document.getElementById('nome').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const passwordConfirm = document.getElementById('password-confirm').value;
+        
+        if(!nome || !email || !password || !passwordConfirm){
+          msg.style.color = 'red';
+          msg.textContent = 'Preencha todos os campos obrigatórios.';
+          return;
+        }
+        if(password !== passwordConfirm){
+          msg.style.color = 'red';
+          msg.textContent = 'A confirmação de senha não confere.';
+          return;
+        }
+
+        try{
+          // Armazenar dados temporariamente para usar após verificação
+          sessionStorage.setItem('registerData', JSON.stringify({
+            name: nome,
+            email,
+            password
+          }));
+          // Redireciona para página de verificação
+          location.href = '/static/verify.html';
+        }catch(err){
+          console.error(err);
+          msg.style.color = 'red';
+          msg.textContent = 'Erro ao processar dados.';
+        }
+      });
+    </script>
+  </body>
+</html>

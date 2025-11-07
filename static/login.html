@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Login - Get Stock</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Login</h1>
+      <section class="card">
+        <form id="login-form">
+          <label>Email<br /><input type="email" name="email" id="email" required /></label>
+          <label>Senha<br /><input type="password" name="password" id="password" required /></label>
+          <button type="submit" class="btn">Entrar</button>
+        </form>
+        <div id="login-message" class="message"></div>
+        <p style="margin-top:12px">Não tem conta? <a href="/static/register.html">Cadastre-se</a></p>
+      </section>
+    </div>
+
+    <script>
+      const API_BASE = '';
+  const form = document.getElementById('login-form');
+
+  form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const msg = document.getElementById('login-message');
+        msg.style.color = 'blue';
+        msg.textContent = 'Entrando...';
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        if(!email || !password){
+          msg.style.color = 'red';
+          msg.textContent = 'Preencha email e senha.';
+          return;
+        }
+        try{
+          const res = await fetch(API_BASE + '/verifica', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+          if(!res.ok){
+            const txt = await res.text();
+            msg.style.color = 'red';
+            msg.textContent = 'Erro: ' + txt;
+            return;
+          }
+          const data = await res.json();
+          // Armazena o token JWT e o status do usuário
+          if (data.token) {
+            sessionStorage.setItem('token', data.token);
+            sessionStorage.setItem('userStatus', data.status);
+          }
+          msg.style.color = 'green';
+          msg.textContent = 'Login realizado com sucesso.';
+          // opcional: redirecionar para a página principal
+          setTimeout(()=> location.href = '/static/index.html', 800);
+        }catch(err){
+          console.error(err);
+          msg.style.color = 'red';
+          msg.textContent = 'Erro ao conectar com servidor.';
+        }
+      });
+    </script>
+  </body>
+</html>

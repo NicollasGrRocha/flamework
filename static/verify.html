@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verificar Código - Get Stock</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Verificar Código</h1>
+      <section class="card">
+        <div id="verification-message" class="message">
+          Enviando código de verificação para número cadastrado...
+        </div>
+        <form id="verify-form" style="display:none">
+          <label>Digite o código recebido no WhatsApp<br />
+            <input type="text" id="codigo" required pattern="\d{4}" maxlength="4" placeholder="Digite os 4 dígitos" />
+          </label>
+          <button type="submit" class="btn">Verificar e Concluir Cadastro</button>
+        </form>
+      </section>
+    </div>
+
+    <script>
+      const API_BASE = '';
+      let registerData = null;
+
+      async function enviarCodigo() {
+        const msg = document.getElementById('verification-message');
+        try {
+          // Recupera dados do registro
+          const registerData = JSON.parse(sessionStorage.getItem('registerData') || '{}');
+          if (!registerData.email) {
+            throw new Error('Email não encontrado. Por favor, volte e preencha o cadastro novamente.');
+          }
+
+          const res = await fetch(API_BASE + '/send-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: registerData.email })
+          });
+
+          if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.error || 'Falha ao enviar código');
+          }
+          
+          msg.style.color = 'green';
+          msg.textContent = 'Código enviado! Por favor digite o código recebido.';
+          document.getElementById('verify-form').style.display = 'block';
+        } catch (err) {
+          msg.style.color = 'red';
+          msg.textContent = err.message || 'Erro ao enviar código. Tente novamente mais tarde.';
+          console.error(err);
+        }
+      }
+
+      document.getElementById('verify-form').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const msg = document.getElementById('verification-message');
+        const codigo = document.getElementById('codigo').value.trim();
+        
+        try {
+          // Pega dados do registro
+          registerData = JSON.parse(sessionStorage.getItem('registerData') || '{}');
+          if (!registerData.email || !registerData.password || !registerData.name) {
+            msg.style.color = 'red';
+            msg.textContent = 'Dados de registro não encontrados. Por favor, volte e preencha o cadastro novamente.';
+            return;
+          }
+
+          // Envia código + dados do usuário
+          const verifyRes = await fetch(API_BASE + '/verify-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              code: codigo,
+              name: registerData.name,
+              email: registerData.email,
+              password: registerData.password
+            })
+          });
+          
+          if (!verifyRes.ok) {
+            const txt = await verifyRes.text();
+            msg.style.color = 'red';
+            msg.textContent = 'Código inválido. ' + txt;
+            return;
+          }
+
+          // Se o código foi validado e usuário criado, redireciona para login
+          msg.style.color = 'green';
+          msg.textContent = 'Cadastro concluído com sucesso!';
+          sessionStorage.removeItem('registerData');  // limpa dados temporários
+          setTimeout(() => location.href = '/static/login.html', 1000);
+
+        } catch (err) {
+          console.error(err);
+          msg.style.color = 'red';
+          msg.textContent = 'Erro ao processar solicitação.';
+        }
+      });
+
+      // Ao carregar, inicia envio do código
+      window.addEventListener('load', () => {
+        registerData = JSON.parse(sessionStorage.getItem('registerData') || '{}');
+        if (!registerData.email || !registerData.password || !registerData.name) {
+          const msg = document.getElementById('verification-message');
+          msg.style.color = 'red';
+          msg.textContent = 'Dados de registro não encontrados. Por favor, volte e preencha o cadastro novamente.';
+          return;
+        }
+        enviarCodigo();
+      });
+    </script>
+  </body>
+</html>

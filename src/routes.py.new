@@ -1,0 +1,116 @@
+from src.Application.Controllers.user_controller import UserController
+from src.Application.Controllers.produto_controller import ProdutoController
+from src.Application.Service.user_service import UserService  # Adiciona import do UserService
+from flask import jsonify, make_response, request
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from src.Infrastructure.http.whats_app import gerar_codigo, verificar_codigo
+
+def init_routes(app):    
+    @app.route('/api', methods=['GET'])
+    def health():
+        return make_response(jsonify({
+            "mensagem": "API - OK; Docker - Up",
+        }), 200)
+    
+    @app.route('/send-code', methods=['POST'])
+    def send_code():
+        try:
+            sid = gerar_codigo()
+            if not sid:
+                return jsonify({"error": "Falha ao enviar código"}), 500
+            return jsonify({"message": "Código enviado com sucesso", "sid": sid}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/verify-code', methods=['POST'])
+    def verify_code():
+        data = request.get_json()
+        if not data or 'code' not in data:
+            return jsonify({"error": "Código não fornecido"}), 400
+            
+        success, message = verificar_codigo(data['code'])
+        if success:
+            # Código validado, agora podemos criar o usuário
+            if not data.get('name') or not data.get('email') or not data.get('password'):
+                return jsonify({"error": "Dados de cadastro incompletos"}), 400
+                
+            try:
+                # Usamos UserService diretamente (agora importado corretamente)
+                user = UserService.create_user(
+                    name=data['name'],
+                    email=data['email'],
+                    password=data['password']
+                )
+                if not user:
+                    return jsonify({"error": "Falha ao criar usuário"}), 500
+                    
+                return jsonify({
+                    "message": "Usuário criado com sucesso",
+                    "user": user.to_dict()
+                }), 201
+            except Exception as e:
+                print(f"Erro ao criar usuário: {str(e)}")  # log para debug
+                return jsonify({"error": f"Erro ao criar usuário: {str(e)}"}), 500
+                
+        return jsonify({"error": message}), 400
+    
+    @app.route('/user', methods=['POST'])
+    def register_user():
+        """
+        Rota mantida para compatibilidade, mas agora o registro é feito via /verify-code
+        após validação do código SMS
+        """
+        return UserController.register_user()
+    
+    @app.route('/user/<int:id>', methods=['GET'])
+    @jwt_required()
+    def get_user(id):
+        return UserController.get_user(id)
+    
+    @app.route('/verifica', methods=['POST'])
+    def verify():
+        return UserController.verify_user()
+    
+    @app.route('/user/<int:id>', methods=['PUT'])
+    @jwt_required()
+    def update_user(id):
+        return UserController.atualiza_user(id)
+    
+    @app.route('/verifica/code', methods=['POST'])
+    def validation_code():
+        return UserController.validate_code()
+
+    @app.route('/user/<int:id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_user(id):
+        return UserController.delete_user(id)
+    
+    @app.route('/produto', methods=['POST'])
+    def criar_produto():
+        return ProdutoController.register_produto()
+    
+    @app.route('/produto', methods=['GET'])
+    def listar():
+        return ProdutoController.list_product()
+    
+    @app.route('/produto/<int:id>', methods=['PUT'])
+    def att_produto(id):
+        return ProdutoController.att_produto(id)
+    
+    @app.route('/ativar/<int:id>', methods=['PATCH'])
+    def ativar_product(id):
+        return ProdutoController.ativar_produto(id)
+    
+    @app.route('/desativar/<int:id>', methods=['PATCH'])
+    def desativar_product(id):
+        return ProdutoController.inativar_produto(id)
+    
+    @app.route('/produto/<int:id>', methods=['DELETE'])
+    def exclusao_produto(id):
+        return ProdutoController.deletar_produto(id)
+    
+    @app.route('/produto/vender/<int:id>', methods=['PATCH'])
+    def vender_produto(id):
+        return ProdutoController.vender(id)
+
+    return app
