@@ -52,7 +52,20 @@
           // Armazena o token JWT e o status do usuário
           if (data.token) {
             sessionStorage.setItem('token', data.token);
-            sessionStorage.setItem('userStatus', data.status);
+            if (typeof data.status !== 'undefined') {
+              sessionStorage.setItem('userStatus', String(data.status));
+            } else {
+              // fallback: tenta obter do backend
+              try {
+                const resMe = await fetch('/me', { headers: { 'Authorization': 'Bearer ' + data.token } });
+                if (resMe.ok) {
+                  const me = await resMe.json();
+                  if (typeof me.status !== 'undefined') {
+                    sessionStorage.setItem('userStatus', String(me.status));
+                  }
+                }
+              } catch (_) {}
+            }
           }
           msg.style.color = 'green';
           msg.textContent = 'Login realizado com sucesso.';

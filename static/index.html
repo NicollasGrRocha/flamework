@@ -106,7 +106,10 @@
         <h1>MiniCars</h1>
         <div class="nav-links">
             <a href="/static/login.html" id="login-btn">Login</a>
+            <a href="/static/cart.html" id="cart-link">Carrinho</a>
+            <a href="/static/history.html" id="history-link">Histórico</a>
             <a href="#" id="admin-toggle" style="display: none;">Painel Admin</a>
+            <a href="#" id="logout-btn" style="display:none;">Sair</a>
         </div>
     </nav>
 
@@ -134,6 +137,9 @@
                 <label>Preço (R$)<br>
                     <input type="number" step="0.01" id="product-price" required>
                 </label>
+                <label>Quantidade em estoque<br>
+                    <input type="number" min="0" step="1" id="product-quantity" required>
+                </label>
                 <label>Imagem URL<br>
                     <input type="text" id="product-image" required>
                 </label>
@@ -147,14 +153,30 @@
 
     <script>
         // Verificar se o usuário está logado e é admin
-        function checkAdminStatus() {
+        async function checkAdminStatus() {
             const token = sessionStorage.getItem('token');
-            const userStatus = sessionStorage.getItem('userStatus');
-            
-            // Mostra/esconde botão de login
+            let userStatus = sessionStorage.getItem('userStatus');
+
+            // tenta atualizar status consultando backend se tiver token
+            if (token) {
+                try {
+                    const res = await fetch('/me', {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    if (res.ok) {
+                        const me = await res.json();
+                        if (me.status !== undefined) {
+                            userStatus = String(me.status);
+                            sessionStorage.setItem('userStatus', userStatus);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Falha ao atualizar status do usuário', e);
+                }
+            }
+
             document.getElementById('login-btn').style.display = token ? 'none' : 'block';
-            
-            // Verifica se é admin (status 2)
+            document.getElementById('logout-btn').style.display = token ? 'block' : 'none';
             const isAdmin = userStatus === '2';
             document.getElementById('admin-toggle').style.display = isAdmin ? 'block' : 'none';
             document.getElementById('admin-panel').style.display = isAdmin ? 'block' : 'none';
@@ -171,6 +193,7 @@
                 products.forEach(product => {
                     const userStatus = sessionStorage.getItem('userStatus');
                     const isAdmin = userStatus === '2';
+                    const isLogged = !!sessionStorage.getItem('token');
                     const adminControls = isAdmin ? `
                         <div class="admin-controls">
                             <button onclick="editProduct(${product.id})" class="edit-btn">Editar</button>
@@ -178,6 +201,12 @@
                             <button onclick="deleteProduct(${product.id})" class="delete-btn">Remover</button>
                         </div>
                     ` : '';
+                    const shopControls = isLogged ? `
+                        <div class="shop-controls" style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                            <button onclick="addToCart(${product.id}, '${product.name}', ${product.price})" style="background:#f39c12;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">Adicionar ao Carrinho</button>
+                            <button onclick="buyNow(${product.id})" style="background:#27ae60;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">Comprar Agora</button>
+                        </div>
+                    ` : '<p style="color:#888;font-size:0.85em;">Faça login para comprar</p>';
 
                     container.innerHTML += `
                         <div class="product-card">
@@ -186,11 +215,94 @@
                             <p class="product-price">R$ ${parseFloat(product.price).toFixed(2)}</p>
                             <p>${product.description}</p>
                             ${adminControls}
+                            ${shopControls}
                         </div>
                     `;
                 });
             } catch (error) {
                 console.error('Erro ao carregar produtos:', error);
+            }
+        }
+
+        // --- Carrinho ---
+        function loadCart() {
+            const raw = sessionStorage.getItem('cart');
+            return raw ? JSON.parse(raw) : [];
+        }
+        function saveCart(cart) {
+            sessionStorage.setItem('cart', JSON.stringify(cart));
+        }
+        function addToCart(id, name, price) {
+            const cart = loadCart();
+            const existing = cart.find(i => i.product_id === id);
+            if (existing) {
+                existing.quantity += 1;
+            } else {
+                cart.push({ product_id: id, name, price, quantity: 1 });
+            }
+            saveCart(cart);
+            alert('Produto adicionado ao carrinho. Itens: ' + cart.length);
+        }
+        async function buyNow(id) {
+            // compra direta de 1 unidade
+            const token = sessionStorage.getItem('token');
+            if (!token) { alert('Faça login para comprar'); return; }
+            try {
+                const payload = { items: [{ product_id: id, quantity: 1 }] };
+                const res = await fetch('/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    const msg = 'Compra realizada! Nota Fiscal ID: ' + data.nota_fiscal.order_id;
+                    if (data.nota_fiscal_url) {
+                        if (confirm(msg + '\nDeseja baixar a nota fiscal em PDF?')) {
+                            window.open(data.nota_fiscal_url, '_blank');
+                        }
+                    } else {
+                        alert(msg);
+                    }
+                    loadProducts();
+                } else {
+                    alert('Erro na compra: ' + (data.error || '')); 
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Falha ao realizar compra');
+            }
+        }
+        async function checkoutCart() {
+            const token = sessionStorage.getItem('token');
+            if (!token) { alert('Faça login para finalizar'); return; }
+            const cart = loadCart();
+            if (!cart.length) { alert('Carrinho vazio'); return; }
+            try {
+                const payload = { items: cart.map(c => ({ product_id: c.product_id, quantity: c.quantity })) };
+                const res = await fetch('/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    const msg = 'Compra realizada! Nota Fiscal ID: ' + data.nota_fiscal.order_id;
+                    if (data.nota_fiscal_url) {
+                        if (confirm(msg + '\nDeseja baixar a nota fiscal em PDF?')) {
+                            window.open(data.nota_fiscal_url, '_blank');
+                        }
+                    } else {
+                        alert(msg);
+                    }
+                    sessionStorage.removeItem('cart');
+                    loadProducts();
+                } else {
+                    alert('Erro no checkout: ' + (data.error || '')); 
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Falha no checkout');
             }
         }
 
@@ -242,6 +354,7 @@
                 document.getElementById('product-id').value = product.id;
                 document.getElementById('product-name').value = product.name;
                 document.getElementById('product-price').value = product.price;
+                document.getElementById('product-quantity').value = product.quantity ?? 1;
                 document.getElementById('product-image').value = product.image;
                 document.getElementById('product-description').value = product.description;
                 document.getElementById('modal-title').textContent = 'Editar Produto';
@@ -279,6 +392,7 @@
             const productData = {
                 name: document.getElementById('product-name').value,
                 price: parseFloat(document.getElementById('product-price').value),
+                quantity: parseInt(document.getElementById('product-quantity').value || '1'),
                 image: document.getElementById('product-image').value,
                 description: document.getElementById('product-description').value
             };
@@ -319,6 +433,16 @@
         document.addEventListener('DOMContentLoaded', () => {
             checkAdminStatus();
             loadProducts();
+        });
+
+        // Logout
+        document.getElementById('logout-btn').addEventListener('click', (e)=>{
+            e.preventDefault();
+            sessionStorage.removeItem('token');
+            sessionStorage.removeItem('userStatus');
+            // opcional: limpar carrinho
+            // sessionStorage.removeItem('cart');
+            location.href = '/static/login.html';
         });
     </script>
 </body>

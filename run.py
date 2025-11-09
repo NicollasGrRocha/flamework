@@ -32,7 +32,17 @@ def create_app():
     init_routes(app)
 
     with app.app_context():
+        # Importe TODOS os modelos antes do create_all para que as tabelas sejam criadas
+        try:
+            from src.Infrastructure.Model.user import User  # noqa: F401
+            from src.Infrastructure.Model.produto import Produto  # noqa: F401
+            from src.Infrastructure.Model.order import Order  # noqa: F401
+            from src.Infrastructure.Model.order_item import OrderItem  # noqa: F401
+        except Exception as e:
+            print(f"Erro ao importar modelos: {e}")
+
         db.create_all()
+
         # Criar usuário admin se não existir
         from src.Application.Service.user_service import UserService
         UserService.create_admin_if_not_exists()

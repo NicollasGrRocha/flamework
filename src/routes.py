@@ -38,6 +38,7 @@ def init_routes(app):
                 print(f"Atualizando código para usuário existente: {codigo}")  # Debug
             else:
                 # Se não existe, cria um novo usuário com os dados básicos
+                # status inicial 0 (pendente) até validar código; admin permanecem 2 manualmente
                 user = User(
                     name=data.get("name", ""),
                     email=data["email"],
@@ -45,7 +46,7 @@ def init_routes(app):
                     cnpj="00000000000",
                     celular="11979911839",
                     codigo_validacao=codigo,
-                    status=False
+                    status=0
                 )
                 print(f"Criando novo usuário com código: {codigo}")  # Debug
                 db.session.add(user)
@@ -84,8 +85,9 @@ def init_routes(app):
             if data.get("password"):
                 user.password = data["password"]
                 
-            # Se o código estiver correto, atualiza o status e limpa o código
-            user.status = True
+            # Se o código estiver correto, atualiza o status para 1 (usuário comum) se não for admin
+            if user.status not in (1,2):
+                user.status = 1
             user.codigo_validacao = None
             db.session.commit()
             
@@ -169,9 +171,11 @@ def init_routes(app):
             except Exception:
                 status_code = None
 
-            # Se a verificação for bem sucedida (HTTP 200), atualiza o status
-            if status_code == 200:
-                user.status = True  # Atualiza o status para verificado
+            # Se a verificação for bem sucedida (HTTP 200), NÃO sobrescreve status de admin
+            if status_code == 200 and user.status != 2:
+                # Mantém usuário comum com status 1; não rebaixa admin
+                if user.status not in (1,2):  # Em caso de resíduos booleanos
+                    user.status = 1
                 db.session.commit()
 
             return result
@@ -184,6 +188,35 @@ def init_routes(app):
     @jwt_required()
     def update_user(id):
         return UserController.atualiza_user(id)
+
+    @app.route("/me", methods=["GET"])
+    @jwt_required()
+    def me():
+        try:
+            from src.Infrastructure.Model.user import User
+            from src.config.data_base import db
+            ident = get_jwt_identity()
+            user = None
+            # identity pode ser id (int) ou cnpj (string)
+            try:
+                user_id = int(ident)
+                user = db.session.query(User).filter_by(id=user_id).first()
+            except Exception:
+                # não é int, tentar por cnpj
+                user = db.session.query(User).filter_by(cnpj=str(ident)).first()
+
+            if not user:
+                return jsonify({"error": "Usuário não encontrado"}), 404
+
+            return jsonify({
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "status": user.status
+            }), 200
+        except Exception as e:
+            print(f"Erro em /me: {str(e)}")
+            return jsonify({"error": "Erro ao obter usuário"}), 500
     
     @app.route("/verifica/code", methods=["POST"])
     def validation_code():
@@ -225,5 +258,144 @@ def init_routes(app):
     @app.route("/produto/vender/<int:id>", methods=["PATCH"])
     def vender_produto(id):
         return ProdutoController.vender(id)
+
+    # ----- Carrinho em memória simples (sessionStorage front; backend só processa compra) -----
+    @app.route('/checkout', methods=['POST'])
+    @jwt_required()
+    def checkout():
+        try:
+            from src.Infrastructure.Model.produto import Produto
+            from src.Infrastructure.Model.order import Order
+            from src.Infrastructure.Model.order_item import OrderItem
+            from src.config.data_base import db
+            from flask import current_app
+            import os
+            data = request.get_json() or {}
+            items = data.get('items', [])  # [{product_id, quantity}]
+            if not items:
+                return jsonify({'error': 'Nenhum item enviado', 'code': 'EMPTY_ITEMS'}), 400
+
+            ident = get_jwt_identity()
+            user_id = None
+            try:
+                user_id = int(ident)
+            except Exception:
+                # se identity não for id direto, tentar mapear via cnpj
+                from src.Infrastructure.Model.user import User
+                u = db.session.query(User).filter_by(cnpj=str(ident)).first()
+                if not u:
+                    return jsonify({'error': 'Usuário inválido'}), 400
+                user_id = u.id
+
+            order = Order(user_id=user_id, total=0.0)
+            db.session.add(order)
+            total = 0.0
+            for idx, entry in enumerate(items):
+                try:
+                    pid = int(entry.get('product_id'))
+                except Exception:
+                    return jsonify({'error': f'product_id inválido no índice {idx}', 'code': 'BAD_PRODUCT_ID'}), 400
+                try:
+                    qty = int(entry.get('quantity', 1))
+                except Exception:
+                    return jsonify({'error': f'quantity inválida no índice {idx}', 'code': 'BAD_QUANTITY'}), 400
+                produto = db.session.query(Produto).filter_by(id=pid).first()
+                if not produto or not produto.status:
+                    return jsonify({'error': f'Produto {pid} inválido/inativo', 'code': 'PRODUCT_INACTIVE'}), 400
+                if produto.quantidade < qty:
+                    return jsonify({'error': f'Estoque insuficiente para produto {pid}', 'code': 'LOW_STOCK'}), 400
+                linha_total = produto.preco * qty
+                oi = OrderItem(order=order,
+                               product_id=produto.id,
+                               product_name=produto.nome,
+                               unit_price=produto.preco,
+                               quantity=qty,
+                               line_total=linha_total)
+                db.session.add(oi)
+                total += linha_total
+                # baixa estoque
+                produto.quantidade -= qty
+            order.total = total
+            db.session.commit()
+            # Nota fiscal simples (mock JSON)
+            nota = {
+                'order_id': order.id,
+                'user_id': order.user_id,
+                'total': order.total,
+                'itens': [i.to_dict() for i in order.items]
+            }
+
+            # Geração de PDF
+            try:
+                from reportlab.lib.pagesizes import A4
+                from reportlab.pdfgen import canvas
+                from reportlab.lib.units import mm
+                from src.Infrastructure.Model.user import User
+                
+                # Buscar nome do usuário
+                usuario = db.session.query(User).filter_by(id=order.user_id).first()
+                nome_usuario = usuario.name if usuario else f"ID: {order.user_id}"
+                
+                pdf_dir = os.path.join(current_app.root_path, 'static', 'invoices')
+                os.makedirs(pdf_dir, exist_ok=True)
+                pdf_path = os.path.join(pdf_dir, f'invoice_{order.id}.pdf')
+                c = canvas.Canvas(pdf_path, pagesize=A4)
+                width, height = A4
+                y = height - 20*mm
+                c.setFont("Helvetica-Bold", 14)
+                c.drawString(20*mm, y, f"Nota Fiscal - Pedido #{order.id}")
+                y -= 10*mm
+                c.setFont("Helvetica", 11)
+                c.drawString(20*mm, y, f"Usuário: {nome_usuario}")
+                y -= 6*mm
+                c.drawString(20*mm, y, f"Total: R$ {order.total:.2f}")
+                y -= 10*mm
+                c.setFont("Helvetica-Bold", 12)
+                c.drawString(20*mm, y, "Itens")
+                y -= 8*mm
+                c.setFont("Helvetica", 10)
+                for it in order.items:
+                    if y < 20*mm:
+                        c.showPage()
+                        y = height - 20*mm
+                        c.setFont("Helvetica", 10)
+                    line = f"{it.product_name} | Qtd: {it.quantity} | Unit: R$ {it.unit_price:.2f} | Total: R$ {it.line_total:.2f}"
+                    c.drawString(20*mm, y, line)
+                    y -= 6*mm
+                c.showPage()
+                c.save()
+                nota_pdf_url = f"/static/invoices/invoice_{order.id}.pdf"
+            except Exception as e_pdf:
+                nota_pdf_url = None
+                print('Falha ao gerar PDF da nota fiscal:', e_pdf)
+
+            return jsonify({'message': 'Compra realizada', 'nota_fiscal': nota, 'nota_fiscal_url': nota_pdf_url}), 201
+        except Exception as e:
+            import traceback
+            print('Erro no checkout:', e)
+            traceback.print_exc()
+            return jsonify({'error': 'Falha no checkout', 'detail': str(e), 'code': 'CHECKOUT_EXCEPTION'}), 500
+
+    @app.route('/historico', methods=['GET'])
+    @jwt_required()
+    def historico():
+        try:
+            from src.Infrastructure.Model.order import Order
+            from src.config.data_base import db
+            ident = get_jwt_identity()
+            user_id = None
+            try:
+                user_id = int(ident)
+            except Exception:
+                from src.Infrastructure.Model.user import User
+                u = db.session.query(User).filter_by(cnpj=str(ident)).first()
+                if not u:
+                    return jsonify({'error': 'Usuário inválido'}), 400
+                user_id = u.id
+            orders = db.session.query(Order).filter_by(user_id=user_id).order_by(Order.created_at.desc()).all()
+            return jsonify([o.to_dict(include_items=True) for o in orders]), 200
+        except Exception as e:
+            print('Erro ao recuperar histórico:', e)
+            return jsonify({'error': 'Falha ao recuperar histórico'}), 500
 
     return app

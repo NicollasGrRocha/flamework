@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Histórico de Compras</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .hist-container{max-width:900px;margin:20px auto;background:#fff;padding:16px;border-radius:8px;}
+    .order{border:1px solid #ddd;margin-bottom:12px;border-radius:6px;padding:12px;background:#fafafa}
+    .order h3{margin:0 0 8px}
+    table{width:100%;border-collapse:collapse;margin-top:6px}
+    th,td{border-bottom:1px solid #eee;padding:6px;text-align:left;font-size:14px}
+    .empty{color:#777;font-style:italic}
+  </style>
+</head>
+<body>
+  <div class="hist-container">
+    <h2>Histórico de Compras</h2>
+    <div id="orders"></div>
+  </div>
+  <script>
+    async function loadHistory(){
+      const token=sessionStorage.getItem('token');
+      if(!token){document.getElementById('orders').innerHTML='<p class="empty">Faça login para ver seu histórico.</p>';return}
+      try{
+        const res=await fetch('/historico',{headers:{'Authorization':'Bearer '+token}});
+        const data=await res.json();
+        if(!res.ok){
+          document.getElementById('orders').innerHTML='<p class="empty">Erro ao carregar histórico.</p>';
+          return;
+        }
+        if(!data.length){
+          document.getElementById('orders').innerHTML='<p class="empty">Nenhuma compra realizada ainda.</p>';
+          return;
+        }
+        const container=document.getElementById('orders');
+        container.innerHTML='';
+        data.forEach(o=>{
+          const div=document.createElement('div');
+          div.className='order';
+          const dt=new Date(o.created_at).toLocaleString('pt-BR');
+          div.innerHTML=`<h3>Pedido #${o.id} - ${dt}</h3>
+            <p>Total: R$ ${o.total.toFixed(2)}</p>
+            <table><thead><tr><th>Produto</th><th>Qtd</th><th>Unitário</th><th>Total</th></tr></thead><tbody>
+              ${o.items.map(i=>`<tr><td>${i.product_name}</td><td>${i.quantity}</td><td>R$ ${i.unit_price.toFixed(2)}</td><td>R$ ${i.line_total.toFixed(2)}</td></tr>`).join('')}
+            </tbody></table>`;
+          container.appendChild(div);
+        });
+      }catch(e){
+        console.error(e);
+        document.getElementById('orders').innerHTML='<p class="empty">Falha ao obter histórico.</p>';
+      }
+    }
+    document.addEventListener('DOMContentLoaded',loadHistory);
+  </script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Carrinho</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .cart-container{max-width:900px;margin:20px auto;background:#fff;padding:16px;border-radius:8px;}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-bottom:1px solid #eee;padding:8px;text-align:left}
+    .actions{display:flex;gap:8px}
+    .btn{background:#2c3e50;color:#fff;border:none;padding:8px 12px;border-radius:4px;cursor:pointer}
+    .btn-danger{background:#e74c3c}
+    .tot{font-weight:bold;text-align:right;padding:8px}
+  </style>
+</head>
+<body>
+  <div class="cart-container">
+    <h2>Seu Carrinho</h2>
+    <table>
+      <thead><tr><th>Produto</th><th>Preço</th><th>Qtd</th><th>Total</th><th>Ações</th></tr></thead>
+      <tbody id="cart-body"></tbody>
+    </table>
+    <div class="tot">Total: R$ <span id="cart-total">0,00</span></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="checkoutCart()">Finalizar Compra</button>
+      <button class="btn btn-danger" onclick="clearCart()">Limpar Carrinho</button>
+    </div>
+  </div>
+
+  <script>
+    function loadCart(){const raw=sessionStorage.getItem('cart');return raw?JSON.parse(raw):[]}
+    function saveCart(c){sessionStorage.setItem('cart',JSON.stringify(c))}
+    function render(){
+      const body=document.getElementById('cart-body');
+      const totalEl=document.getElementById('cart-total');
+      const cart=loadCart();
+      body.innerHTML='';
+      let tot=0;
+      cart.forEach((i,idx)=>{
+        const line=i.price*i.quantity; tot+=line;
+        body.innerHTML += `<tr>
+          <td>${i.name}</td>
+          <td>R$ ${i.price.toFixed(2)}</td>
+          <td><input type="number" min="1" value="${i.quantity}" style="width:60px" onchange="chgQty(${idx}, this.value)"></td>
+          <td>R$ ${line.toFixed(2)}</td>
+          <td class="actions"><button class="btn btn-danger" onclick="rm(${idx})">Remover</button></td>
+        </tr>`
+      });
+      totalEl.textContent = tot.toFixed(2);
+    }
+    function rm(idx){const c=loadCart();c.splice(idx,1);saveCart(c);render()}
+    function chgQty(idx,val){const c=loadCart();c[idx].quantity=Math.max(1,parseInt(val||1));saveCart(c);render()}
+    function clearCart(){sessionStorage.removeItem('cart');render()}
+    async function checkoutCart(){
+      const token=sessionStorage.getItem('token');
+      if(!token){alert('Faça login para finalizar');return}
+      const cart=loadCart();
+      if(!cart.length){alert('Carrinho vazio');return}
+      const payload={ items: cart.map(c=>({product_id:c.product_id, quantity:c.quantity})) };
+      try{
+        const res=await fetch('/checkout',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(payload)});
+        const data=await res.json();
+        if(res.ok){
+          const msg = 'Compra realizada! Nota Fiscal ID: '+data.nota_fiscal.order_id;
+          if(data.nota_fiscal_url){
+            if(confirm(msg + '\nDeseja baixar a nota fiscal em PDF?')){
+              window.open(data.nota_fiscal_url, '_blank');
+            }
+          } else {
+            alert(msg);
+          }
+          sessionStorage.removeItem('cart');
+          render();
+        }else{ alert('Erro no checkout: '+(data.error||'')) }
+      }catch(e){ console.error(e); alert('Falha no checkout') }
+    }
+    document.addEventListener('DOMContentLoaded',render);
+  </script>
+</body>
+</html>
