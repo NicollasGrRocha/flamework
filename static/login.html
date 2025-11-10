@@ -49,10 +49,12 @@
             return;
           }
           const data = await res.json();
-          // Armazena o token JWT e o status do usuário
+          // Armazena o token JWT e status em localStorage (persistente 24h) + sessionStorage (atual aba)
           if (data.token) {
+            localStorage.setItem('token', data.token);
             sessionStorage.setItem('token', data.token);
             if (typeof data.status !== 'undefined') {
+              localStorage.setItem('userStatus', String(data.status));
               sessionStorage.setItem('userStatus', String(data.status));
             } else {
               // fallback: tenta obter do backend
@@ -61,11 +63,15 @@
                 if (resMe.ok) {
                   const me = await resMe.json();
                   if (typeof me.status !== 'undefined') {
+                    localStorage.setItem('userStatus', String(me.status));
                     sessionStorage.setItem('userStatus', String(me.status));
                   }
                 }
               } catch (_) {}
             }
+            // Marca horário de login para possível verificação futura
+            const now = Date.now();
+            localStorage.setItem('loginTime', String(now));
           }
           msg.style.color = 'green';
           msg.textContent = 'Login realizado com sucesso.';

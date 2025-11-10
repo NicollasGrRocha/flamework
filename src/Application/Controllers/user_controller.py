@@ -64,7 +64,7 @@ class UserController:
     @staticmethod
     def verify_user():
         data = request.get_json()
-        email = data.get('email')
+        email = (data.get('email') or '').strip()
         password = data.get('password')
 
         user, msg = UserService.verifica_user(email, password)

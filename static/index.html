@@ -154,8 +154,31 @@
     <script>
         // Verificar se o usuário está logado e é admin
         async function checkAdminStatus() {
-            const token = sessionStorage.getItem('token');
+            let token = sessionStorage.getItem('token');
             let userStatus = sessionStorage.getItem('userStatus');
+
+            // Fallback de persistência: recupera de localStorage se sessão vazia e dentro de 24h
+            if (!token) {
+                const persistedToken = localStorage.getItem('token');
+                const loginTime = parseInt(localStorage.getItem('loginTime') || '0', 10);
+                const twentyFourHours = 24 * 60 * 60 * 1000;
+                if (persistedToken && loginTime && (Date.now() - loginTime) < twentyFourHours) {
+                    token = persistedToken;
+                    sessionStorage.setItem('token', token);
+                } else if (persistedToken && loginTime && (Date.now() - loginTime) >= twentyFourHours) {
+                    // Expirado do lado do cliente - limpeza preventiva
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('userStatus');
+                    localStorage.removeItem('loginTime');
+                }
+            }
+            if (!userStatus) {
+                const persistedStatus = localStorage.getItem('userStatus');
+                if (persistedStatus) {
+                    userStatus = persistedStatus;
+                    sessionStorage.setItem('userStatus', userStatus);
+                }
+            }
 
             // tenta atualizar status consultando backend se tiver token
             if (token) {
@@ -442,6 +465,9 @@
             sessionStorage.removeItem('userStatus');
             // opcional: limpar carrinho
             // sessionStorage.removeItem('cart');
+            localStorage.removeItem('token');
+            localStorage.removeItem('userStatus');
+            localStorage.removeItem('loginTime');
             location.href = '/static/login.html';
         });
     </script>

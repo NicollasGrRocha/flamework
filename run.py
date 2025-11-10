@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_jwt_extended import JWTManager
+from datetime import timedelta
 from flask_cors import CORS
 from src.config.data_base import init_db, db
 from src.routes import init_routes
@@ -25,6 +26,8 @@ def create_app():
     
   
     app.config["JWT_SECRET_KEY"] = "flaroque"  
+    # Expiração de 24 horas para o token de acesso
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=24)
     jwt = JWTManager(app)  
 
 
