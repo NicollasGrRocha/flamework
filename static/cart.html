@@ -5,27 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Carrinho</title>
   <link rel="stylesheet" href="/static/style.css" />
-  <style>
-    .cart-container{max-width:900px;margin:20px auto;background:#fff;padding:16px;border-radius:8px;}
-    table{width:100%;border-collapse:collapse}
-    th,td{border-bottom:1px solid #eee;padding:8px;text-align:left}
-    .actions{display:flex;gap:8px}
-    .btn{background:#2c3e50;color:#fff;border:none;padding:8px 12px;border-radius:4px;cursor:pointer}
-    .btn-danger{background:#e74c3c}
-    .tot{font-weight:bold;text-align:right;padding:8px}
-  </style>
 </head>
 <body>
-  <div class="cart-container">
-    <h2>Seu Carrinho</h2>
-    <table>
-      <thead><tr><th>Produto</th><th>Preço</th><th>Qtd</th><th>Total</th><th>Ações</th></tr></thead>
-      <tbody id="cart-body"></tbody>
-    </table>
-    <div class="tot">Total: R$ <span id="cart-total">0,00</span></div>
-    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="checkoutCart()">Finalizar Compra</button>
-      <button class="btn btn-danger" onclick="clearCart()">Limpar Carrinho</button>
+  <div class="container">
+    <div class="card" style="margin-top:20px">
+      <h2 style="margin:0 0 12px">Seu Carrinho</h2>
+      <table>
+        <thead><tr><th>Produto</th><th>Preço</th><th>Qtd</th><th>Total</th><th>Ações</th></tr></thead>
+        <tbody id="cart-body"></tbody>
+      </table>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px">
+        <p style="margin:0;color:var(--muted);font-weight:600">Total:&nbsp;<span style="color:var(--accent)">R$ <span id="cart-total">0,00</span></span></p>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn view-btn" onclick="checkoutCart()">Finalizar Compra</button>
+        <button class="btn delete-btn" onclick="clearCart()">Limpar Carrinho</button>
+      </div>
     </div>
   </div>
 
@@ -43,9 +38,9 @@
         body.innerHTML += `<tr>
           <td>${i.name}</td>
           <td>R$ ${i.price.toFixed(2)}</td>
-          <td><input type="number" min="1" value="${i.quantity}" style="width:60px" onchange="chgQty(${idx}, this.value)"></td>
+          <td><input type="number" min="1" value="${i.quantity}" style="width:70px" onchange="chgQty(${idx}, this.value)"></td>
           <td>R$ ${line.toFixed(2)}</td>
-          <td class="actions"><button class="btn btn-danger" onclick="rm(${idx})">Remover</button></td>
+          <td class="actions" style="display:flex;gap:8px"><button class="btn delete-btn" onclick="rm(${idx})">Remover</button></td>
         </tr>`
       });
       totalEl.textContent = tot.toFixed(2);

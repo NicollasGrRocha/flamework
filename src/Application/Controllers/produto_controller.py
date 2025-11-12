@@ -3,6 +3,8 @@ from flask_jwt_extended import create_access_token
 from src.Infrastructure.Model.produto import Produto
 from src.Application.Service.produto_service import ProdutoService
 import os
+from werkzeug.utils import secure_filename
+import uuid
 
 
 class ProdutoController:
@@ -54,10 +56,12 @@ class ProdutoController:
 
             imagem_path = None
             if imagem:
-                filename = imagem.filename
-                save_path = os.path.join(upload_folder, filename)
+                filename = secure_filename(imagem.filename)
+                unique = uuid.uuid4().hex
+                safe_name = f"{unique}_{filename}" if filename else unique
+                save_path = os.path.join(upload_folder, safe_name)
                 imagem.save(save_path)
-                imagem_path = os.path.join("static", "uploads", filename)
+                imagem_path = f"/static/uploads/{safe_name}"
 
             produto = ProdutoService.criar_produto(nome, preco, quantidade, status, imagem_path)
 
@@ -110,12 +114,19 @@ class ProdutoController:
 
     @staticmethod
     def att_produto(id):
-        data = request.get_json()
-        # Aceitar tanto os campos antigos quanto os novos
-        nome = data.get("name") or data.get("nome")
-        preco = data.get("price") or data.get("preco")
-        quantidade = data.get("quantity") or data.get("quantidade")
-        imagem = data.get("image") or data.get("imagem")
+        # Suporta JSON e multipart/form-data para atualização (inclui upload de imagem)
+        if request.is_json:
+            data = request.get_json()
+            nome = data.get("name") or data.get("nome")
+            preco = data.get("price") or data.get("preco")
+            quantidade = data.get("quantity") or data.get("quantidade")
+            imagem = data.get("image") or data.get("imagem")
+        else:
+            # multipart/form-data
+            nome = request.form.get("name") or request.form.get("nome")
+            preco = request.form.get("price") or request.form.get("preco")
+            quantidade = request.form.get("quantity") or request.form.get("quantidade")
+            imagem = request.files.get("imagem") or request.files.get("image")
 
         produto = ProdutoService.atualizar_produtos(
             id, nome=nome, preco=preco, quantidade=quantidade, imagem=imagem

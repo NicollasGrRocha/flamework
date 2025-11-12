@@ -2,6 +2,7 @@ from src.Domain.produto import ProdutoDomain
 from src.Infrastructure.Model.produto import Produto
 from werkzeug.utils import secure_filename
 from src.config.data_base import db
+from flask import current_app
 import os 
 
 
@@ -77,13 +78,21 @@ class ProdutoService:
             new_produto.quantidade = quantidade
         
         if imagem:
-            if hasattr(imagem, 'filename'):  # É um FileStorage?
+            if hasattr(imagem, 'filename') and imagem.filename:  # É um FileStorage e tem nome?
                 filename = secure_filename(imagem.filename)
-                filepath = os.path.join('static/uploads', filename)
-                imagem.save(filepath)
-                new_produto.imagem = filepath
+                # Evita colisões usando UUID no nome do arquivo
+                import uuid
+                base, ext = os.path.splitext(filename)
+                filename = f"{uuid.uuid4().hex}{ext or ''}"
+                # Garante pasta absoluta
+                upload_dir = os.path.join(current_app.root_path, 'static', 'uploads')
+                os.makedirs(upload_dir, exist_ok=True)
+                abs_path = os.path.join(upload_dir, filename)
+                imagem.save(abs_path)
+                # salva caminho relativo iniciando com / para funcionar em páginas sob /static
+                new_produto.imagem = f"/static/uploads/{filename}"
             else:
-               
+                # string/URL direta
                 new_produto.imagem = imagem
         
         db.session.commit()

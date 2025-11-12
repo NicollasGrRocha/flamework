@@ -116,7 +116,35 @@
     <!-- Painel Administrativo -->
     <div id="admin-panel">
         <h2>Painel Administrativo</h2>
-        <button onclick="showProductModal()" class="btn">Adicionar Novo Produto</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 14px">
+            <button class="btn" id="tab-manage-btn">Gerenciar Produtos</button>
+            <button class="btn" id="tab-userview-btn">Visualizar como Usuário</button>
+            <button class="btn" id="tab-dashboard-btn">Dashboard</button>
+        </div>
+        <div id="tab-manage" style="display:block">
+            <button onclick="showProductModal()" class="btn">Adicionar Novo Produto</button>
+        </div>
+        <div id="tab-userview" style="display:none">
+            <p style="color:var(--muted); margin:0 0 8px">Visualização sem controles de admin.</p>
+            <div class="products-grid" id="userview-products"></div>
+        </div>
+        <div id="tab-dashboard" style="display:none">
+            <div id="dash-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:12px"></div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-bottom:12px">
+                <div class="card">
+                    <h3 style="margin:0 0 10px">Top 5 Produtos Mais Vendidos</h3>
+                    <div id="dash-top-products"></div>
+                </div>
+                <div class="card">
+                    <h3 style="margin:0 0 10px">Alertas de Estoque Baixo</h3>
+                    <div id="dash-low-stock"></div>
+                </div>
+            </div>
+            <div class="card">
+                <h3 style="margin:0 0 10px">Detalhes por Produto</h3>
+                <div id="dash-products"></div>
+            </div>
+        </div>
     </div>
 
     <!-- Grade de Produtos -->
@@ -140,8 +168,8 @@
                 <label>Quantidade em estoque<br>
                     <input type="number" min="0" step="1" id="product-quantity" required>
                 </label>
-                <label>Imagem URL<br>
-                    <input type="text" id="product-image" required>
+                <label>Imagem (upload)<br>
+                    <input type="file" id="product-image-file" accept="image/*">
                 </label>
                 <label>Descrição<br>
                     <textarea id="product-description" required></textarea>
@@ -247,6 +275,130 @@
             }
         }
 
+        // Carrega grid de "visualizar como usuário" (sem admin controls)
+        async function loadUserView() {
+            try {
+                const response = await fetch('/produto');
+                const products = await response.json();
+                const container = document.getElementById('userview-products');
+                container.innerHTML = '';
+                products.forEach(product => {
+                    const isLogged = !!sessionStorage.getItem('token');
+                    const shopControls = isLogged ? `
+                        <div class="shop-controls" style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                            <button onclick="addToCart(${product.id}, '${product.name}', ${product.price})" style="background:#f39c12;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">Adicionar ao Carrinho</button>
+                            <button onclick="buyNow(${product.id})" style="background:#27ae60;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">Comprar Agora</button>
+                        </div>
+                    ` : '<p style="color:#888;font-size:0.85em;">Faça login para comprar</p>';
+                    container.innerHTML += `
+                        <div class="product-card">
+                            <img src="${product.image || 'https://via.placeholder.com/200x150'}" alt="${product.name}">
+                            <h3>${product.name}</h3>
+                            <p class="product-price">R$ ${parseFloat(product.price).toFixed(2)}</p>
+                            <p>${product.description}</p>
+                            ${shopControls}
+                        </div>
+                    `;
+                });
+            } catch (e) {
+                console.error('Erro ao carregar user view', e);
+            }
+        }
+
+        async function loadDashboard() {
+            try {
+                const token = sessionStorage.getItem('token');
+                const res = await fetch('/admin/stats', { headers: { 'Authorization': 'Bearer ' + token }});
+                const data = await res.json();
+                if (!res.ok) { throw new Error(data.error || 'Erro ao obter stats'); }
+
+                const cards = document.getElementById('dash-cards');
+                cards.innerHTML = `
+                    <div class="card"><div style="color:var(--muted);font-size:0.9rem">Receita Total</div><div style="font-size:1.5rem;color:var(--accent);font-weight:700">R$ ${data.total_revenue.toFixed(2)}</div></div>
+                    <div class="card"><div style="color:var(--muted);font-size:0.9rem">Pedidos</div><div style="font-size:1.5rem;font-weight:700">${data.total_orders}</div></div>
+                    <div class="card"><div style="color:var(--muted);font-size:0.9rem">Itens Vendidos</div><div style="font-size:1.5rem;font-weight:700">${data.total_items_sold}</div></div>
+                    <div class="card"><div style="color:var(--muted);font-size:0.9rem">Estoque Total</div><div style="font-size:1.5rem;font-weight:700">${data.stock_total}</div></div>
+                    <div class="card"><div style="color:var(--muted);font-size:0.9rem">Clientes Únicos</div><div style="font-size:1.5rem;font-weight:700">${data.unique_customers}</div></div>
+                    <div class="card"><div style="color:var(--muted);font-size:0.9rem">Ticket Médio</div><div style="font-size:1.5rem;color:var(--success);font-weight:700">R$ ${data.avg_order_value.toFixed(2)}</div></div>
+                    <div class="card"><div style="color:var(--muted);font-size:0.9rem">Total de Produtos</div><div style="font-size:1.5rem;font-weight:700">${data.total_products}</div></div>
+                    <div class="card"><div style="color:var(--muted);font-size:0.9rem">Produtos Esgotados</div><div style="font-size:1.5rem;color:var(--danger);font-weight:700">${data.products_out_of_stock}</div></div>
+                    <div class="card"><div style="color:var(--muted);font-size:0.9rem">Estoque Crítico (≤5)</div><div style="font-size:1.5rem;color:var(--warning);font-weight:700">${data.low_stock_count}</div></div>
+                `;
+
+                // Top produtos
+                const topList = document.getElementById('dash-top-products');
+                topList.innerHTML = '';
+                if (data.top_products && data.top_products.length) {
+                    data.top_products.forEach((p, i) => {
+                        const item = document.createElement('div');
+                        item.style.cssText = 'display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)';
+                        item.innerHTML = `
+                            <div style="display:flex;gap:8px;align-items:center">
+                                <span style="font-size:1.2rem;font-weight:700;color:var(--primary)">#${i+1}</span>
+                                <span>${p.name}</span>
+                            </div>
+                            <span style="color:var(--accent);font-weight:600">${p.quantity} un.</span>
+                        `;
+                        topList.appendChild(item);
+                    });
+                } else {
+                    topList.innerHTML = '<p style="color:var(--muted);font-style:italic">Nenhuma venda registrada ainda.</p>';
+                }
+
+                // Estoque baixo
+                const lowList = document.getElementById('dash-low-stock');
+                lowList.innerHTML = '';
+                if (data.low_stock_list && data.low_stock_list.length) {
+                    data.low_stock_list.forEach(p => {
+                        const item = document.createElement('div');
+                        item.style.cssText = 'display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)';
+                        item.innerHTML = `
+                            <span>${p.name}</span>
+                            <span style="color:var(--warning);font-weight:600">${p.stock} restantes</span>
+                        `;
+                        lowList.appendChild(item);
+                    });
+                } else {
+                    lowList.innerHTML = '<p style="color:var(--muted);font-style:italic">Todos os produtos com estoque saudável.</p>';
+                }
+
+                // Detalhes por produto
+                const list = document.getElementById('dash-products');
+                list.innerHTML = '';
+                data.per_product.forEach(p => {
+                    const bar1 = Math.min(100, p.percent_of_total_sold);
+                    const bar2 = Math.min(100, p.sold_vs_stock_percent);
+                    const row = document.createElement('div');
+                    row.className = 'card';
+                    row.style.marginBottom = '10px';
+                    row.innerHTML = `
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+                            <div style="font-weight:700;font-size:1.05rem">${p.name}</div>
+                            <div style="color:var(--muted);font-size:0.9rem">
+                                Vendidos: <strong>${p.sold_qty}</strong> · Estoque: <strong>${p.stock_remaining}</strong> · Valor em Estoque: <strong style="color:var(--accent)">R$ ${p.stock_value.toFixed(2)}</strong>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:12px;margin-top:6px;color:var(--muted);font-size:0.85rem">
+                            <span>Preço: R$ ${p.price.toFixed(2)}</span> · <span>Receita: <strong style="color:var(--success)">R$ ${p.revenue.toFixed(2)}</strong></span>
+                        </div>
+                        <div style="margin-top:10px">
+                            <div style="color:var(--muted); font-size:12px; margin-bottom:4px">Participação nas vendas totais (${bar1.toFixed(1)}%)</div>
+                            <div style="background:#17202a;border:1px solid var(--border);height:10px;border-radius:8px;overflow:hidden"><div style="width:${bar1}%;background:linear-gradient(90deg,var(--accent),#6ae0ff);height:100%"></div></div>
+                        </div>
+                        <div style="margin-top:10px">
+                            <div style="color:var(--muted); font-size:12px; margin-bottom:4px">Vendido vs Estoque total (${bar2.toFixed(1)}%)</div>
+                            <div style="background:#17202a;border:1px solid var(--border);height:10px;border-radius:8px;overflow:hidden"><div style="width:${bar2}%;background:linear-gradient(90deg,var(--primary),var(--primary-600));height:100%"></div></div>
+                        </div>
+                    `;
+                    list.appendChild(row);
+                });
+            } catch (e) {
+                console.error(e);
+                const cards = document.getElementById('dash-cards');
+                cards.innerHTML = '<div class="card">Erro ao carregar dashboard.</div>';
+            }
+        }
+
         // --- Carrinho ---
         function loadCart() {
             const raw = sessionStorage.getItem('cart');
@@ -332,13 +484,21 @@
         // Funções do CRUD
         async function createProduct(productData) {
             try {
+                const fd = new FormData();
+                // Backend de form-data espera nomes antigos (nome, preco, quantidade, status, imagem)
+                fd.append('nome', productData.name);
+                fd.append('preco', String(productData.price));
+                fd.append('quantidade', String(productData.quantity ?? 1));
+                fd.append('status', '1');
+                if (productData.file) {
+                    fd.append('imagem', productData.file);
+                }
                 const response = await fetch('/produto', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
                         'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                     },
-                    body: JSON.stringify(productData)
+                    body: fd
                 });
                 if (response.ok) {
                     loadProducts();
@@ -378,7 +538,7 @@
                 document.getElementById('product-name').value = product.name;
                 document.getElementById('product-price').value = product.price;
                 document.getElementById('product-quantity').value = product.quantity ?? 1;
-                document.getElementById('product-image').value = product.image;
+                // não setamos value no input file (por segurança o navegador bloqueia)
                 document.getElementById('product-description').value = product.description;
                 document.getElementById('modal-title').textContent = 'Editar Produto';
                 showProductModal();
@@ -412,11 +572,12 @@
         // Event Listeners
         document.getElementById('product-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const fileInput = document.getElementById('product-image-file');
             const productData = {
                 name: document.getElementById('product-name').value,
                 price: parseFloat(document.getElementById('product-price').value),
                 quantity: parseInt(document.getElementById('product-quantity').value || '1'),
-                image: document.getElementById('product-image').value,
+                file: fileInput.files && fileInput.files[0] ? fileInput.files[0] : null,
                 description: document.getElementById('product-description').value
             };
 
@@ -424,13 +585,19 @@
             if (id) {
                 // Atualizar produto existente
                 try {
+                    const fd = new FormData();
+                    fd.append('nome', productData.name);
+                    fd.append('preco', String(productData.price));
+                    fd.append('quantidade', String(productData.quantity ?? 1));
+                    if (productData.file) {
+                        fd.append('imagem', productData.file);
+                    }
                     const response = await fetch(`/produto/${id}`, {
                         method: 'PUT',
                         headers: {
-                            'Content-Type': 'application/json',
                             'Authorization': `Bearer ${sessionStorage.getItem('token')}`
                         },
-                        body: JSON.stringify(productData)
+                        body: fd
                     });
                     if (response.ok) {
                         loadProducts();
@@ -451,6 +618,18 @@
             const panel = document.getElementById('admin-panel');
             panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
         });
+
+        // Tabs admin
+        function showTab(which){
+            document.getElementById('tab-manage').style.display = which==='manage' ? 'block' : 'none';
+            document.getElementById('tab-userview').style.display = which==='userview' ? 'block' : 'none';
+            document.getElementById('tab-dashboard').style.display = which==='dashboard' ? 'block' : 'none';
+            if (which==='userview') loadUserView();
+            if (which==='dashboard') loadDashboard();
+        }
+        document.getElementById('tab-manage-btn').addEventListener('click', ()=>showTab('manage'));
+        document.getElementById('tab-userview-btn').addEventListener('click', ()=>showTab('userview'));
+        document.getElementById('tab-dashboard-btn').addEventListener('click', ()=>showTab('dashboard'));
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {

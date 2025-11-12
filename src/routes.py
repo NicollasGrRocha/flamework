@@ -259,6 +259,131 @@ def init_routes(app):
     def vender_produto(id):
         return ProdutoController.vender(id)
 
+    # ----- Admin stats dashboard -----
+    @app.route('/admin/stats', methods=['GET'])
+    @jwt_required()
+    def admin_stats():
+        try:
+            from sqlalchemy import func
+            from src.Infrastructure.Model.user import User
+            from src.Infrastructure.Model.produto import Produto
+            from src.Infrastructure.Model.order import Order
+            from src.Infrastructure.Model.order_item import OrderItem
+            from src.config.data_base import db
+
+            # Verifica admin
+            ident = get_jwt_identity()
+            user = None
+            try:
+                uid = int(ident)
+                user = db.session.query(User).filter_by(id=uid).first()
+            except Exception:
+                user = db.session.query(User).filter_by(cnpj=str(ident)).first()
+            if not user or user.status != 2:
+                return jsonify({"error": "Acesso negado"}), 403
+
+            total_revenue = db.session.query(func.coalesce(func.sum(Order.total), 0.0)).scalar() or 0.0
+            total_orders = db.session.query(func.count(Order.id)).scalar() or 0
+            total_items_sold = db.session.query(func.coalesce(func.sum(OrderItem.quantity), 0)).scalar() or 0
+            stock_total = db.session.query(func.coalesce(func.sum(Produto.quantidade), 0)).scalar() or 0
+            
+            # Estatísticas adicionais
+            unique_customers = db.session.query(func.count(func.distinct(Order.user_id))).scalar() or 0
+            avg_order_value = float(total_revenue / total_orders) if total_orders > 0 else 0.0
+            total_products = db.session.query(func.count(Produto.id)).scalar() or 0
+            products_out_of_stock = db.session.query(func.count(Produto.id)).filter(Produto.quantidade == 0).scalar() or 0
+            low_stock_count = db.session.query(func.count(Produto.id)).filter(Produto.quantidade > 0, Produto.quantidade <= 5).scalar() or 0
+            
+            # Top 5 produtos mais vendidos
+            top_selling = (
+                db.session.query(
+                    Produto.nome,
+                    func.coalesce(func.sum(OrderItem.quantity), 0).label('qty')
+                )
+                .outerjoin(OrderItem, OrderItem.product_id == Produto.id)
+                .group_by(Produto.id)
+                .order_by(func.coalesce(func.sum(OrderItem.quantity), 0).desc())
+                .limit(5)
+                .all()
+            )
+            top_products = [{'name': name, 'quantity': int(qty or 0)} for name, qty in top_selling]
+            
+            # Produtos com estoque crítico
+            low_stock_products = (
+                db.session.query(Produto.nome, Produto.quantidade)
+                .filter(Produto.quantidade > 0, Produto.quantidade <= 5)
+                .order_by(Produto.quantidade.asc())
+                .limit(10)
+                .all()
+            )
+            low_stock_list = [{'name': name, 'stock': int(qty)} for name, qty in low_stock_products]
+
+            # Por produto
+            rows = (
+                db.session.query(
+                    Produto.id,
+                    Produto.nome,
+                    Produto.preco,
+                    Produto.quantidade.label('stock'),
+                    func.coalesce(func.sum(OrderItem.quantity), 0).label('sold_qty'),
+                    func.coalesce(func.sum(OrderItem.line_total), 0.0).label('revenue')
+                )
+                .outerjoin(OrderItem, OrderItem.product_id == Produto.id)
+                .group_by(Produto.id)
+                .all()
+            )
+
+            per_product = []
+            for r in rows:
+                sold = int(r.sold_qty or 0)
+                stock = int(r.stock or 0)
+                price = float(r.preco or 0.0)
+                denom = sold + stock
+                total_items_float = float(total_items_sold) if total_items_sold else 1.0
+                stock_value = float(stock) * price
+                per_product.append({
+                    'id': r.id,
+                    'name': r.nome,
+                    'price': price,
+                    'sold_qty': sold,
+                    'stock_remaining': stock,
+                    'stock_value': stock_value,
+                    'revenue': float(r.revenue or 0.0),
+                    'percent_of_total_sold': (float(sold) / total_items_float * 100.0) if total_items_sold else 0.0,
+                    'sold_vs_stock_percent': (float(sold) / float(denom) * 100.0) if denom else 0.0
+                })
+
+            # Série por dia
+            revenue_by_day = (
+                db.session.query(func.date(Order.created_at).label('day'), func.coalesce(func.sum(Order.total), 0.0))
+                .group_by(func.date(Order.created_at))
+                .order_by(func.date(Order.created_at))
+                .all()
+            )
+            revenue_by_day = [
+                { 'date': str(day), 'total': float(total) }
+                for day, total in revenue_by_day
+            ]
+
+            return jsonify({
+                'total_revenue': float(total_revenue),
+                'total_orders': int(total_orders),
+                'total_items_sold': int(total_items_sold),
+                'stock_total': int(stock_total),
+                'unique_customers': int(unique_customers),
+                'avg_order_value': float(avg_order_value),
+                'total_products': int(total_products),
+                'products_out_of_stock': int(products_out_of_stock),
+                'low_stock_count': int(low_stock_count),
+                'top_products': top_products,
+                'low_stock_list': low_stock_list,
+                'per_product': per_product,
+                'revenue_by_day': revenue_by_day
+            })
+        except Exception as e:
+            print(f"Erro ao montar stats: {e}")
+            return jsonify({"error": "Falha ao obter estatísticas"}), 500
+
     # ----- Carrinho em memória simples (sessionStorage front; backend só processa compra) -----
     @app.route('/checkout', methods=['POST'])
     @jwt_required()
