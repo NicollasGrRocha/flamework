@@ -461,7 +461,7 @@ def init_routes(app):
                 usuario = db.session.query(User).filter_by(id=order.user_id).first()
                 nome_usuario = usuario.name if usuario else f"ID: {order.user_id}"
                 
-                pdf_dir = os.path.join(current_app.root_path, 'static', 'invoices')
+                pdf_dir = os.path.join(current_app.static_folder, 'invoices')
                 os.makedirs(pdf_dir, exist_ok=True)
                 pdf_path = os.path.join(pdf_dir, f'invoice_{order.id}.pdf')
                 c = canvas.Canvas(pdf_path, pagesize=A4)

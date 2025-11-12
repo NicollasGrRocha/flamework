@@ -11,7 +11,7 @@ def create_app():
     """
     Cria e configura a aplicação Flask.
     """
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder="frontend/static", static_url_path="/static")
     app.secret_key = 'sua_chave_secreta_aqui'  # Adicione uma chave secreta para as sessões
 
     CORS(app)

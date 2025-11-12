@@ -85,7 +85,7 @@ class ProdutoService:
                 base, ext = os.path.splitext(filename)
                 filename = f"{uuid.uuid4().hex}{ext or ''}"
                 # Garante pasta absoluta
-                upload_dir = os.path.join(current_app.root_path, 'static', 'uploads')
+                upload_dir = os.path.join(current_app.static_folder, 'uploads')
                 os.makedirs(upload_dir, exist_ok=True)
                 abs_path = os.path.join(upload_dir, filename)
                 imagem.save(abs_path)
