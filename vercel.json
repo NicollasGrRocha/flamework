@@ -1,4 +1,8 @@
 {
   "buildCommand": "pip install -r requirements.txt",
-  "outputDirectory": "."
+  "outputDirectory": ".",
+  "routes": [
+    { "src": "/(.*)", "dest": "/api/index.py" }
+  ]
 }
+
