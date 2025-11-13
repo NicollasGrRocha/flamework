@@ -5,6 +5,11 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from src.Infrastructure.http.whats_app import gerar_codigo, verificar_codigo, ultimo_codigo
 
 def init_routes(app):    
+    @app.route("/", methods=["GET"])
+    def index_page():
+        # retorna o index.html estático da pasta frontend/static
+        return app.send_static_file('index.html')
+
     @app.route("/api", methods=["GET"])
     def health():
         return make_response(jsonify({
