@@ -1,0 +1,27 @@
+# Excluir arquivos desnecessários do build do Vercel
+node_modules
+.git
+.gitignore
+*.pyc
+__pycache__
+*.egg-info
+.pytest_cache
+.coverage
+.venv
+venv
+env
+.env.local
+.DS_Store
+.next
+out
+dist
+build
+.vercel
+frontend/node_modules
+*.log
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.tmp
