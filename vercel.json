@@ -1,13 +1,4 @@
 {
-  "buildCommand": "echo 'Build skipped - using serverless function'",
-  "outputDirectory": "./",
-  "python": {
-    "version": "3.12"
-  },
-  "functions": {
-    "app.py": {
-      "memory": 512,
-      "maxDuration": 30
-    }
-  }
+  "buildCommand": "pip install -r requirements.txt",
+  "outputDirectory": "."
 }
