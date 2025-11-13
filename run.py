@@ -31,25 +31,39 @@ def create_app():
     jwt = JWTManager(app)  
 
 
-    init_db(app)
     init_routes(app)
 
-    with app.app_context():
-        # Importe TODOS os modelos antes do create_all para que as tabelas sejam criadas
+    # Inicialização do banco: permitir pular durante builds (ex.: Vercel) ou
+    # falhas de conexão sem quebrar a importação do módulo.
+    # Para pular, defina SKIP_DB_INIT=1 nas variáveis de ambiente do build.
+    if os.environ.get("SKIP_DB_INIT") == "1":
+        print("SKIP_DB_INIT=1 definido — pulando init_db e create_all")
+    else:
         try:
-            from src.Infrastructure.Model.user import User  # noqa: F401
-            from src.Infrastructure.Model.produto import Produto  # noqa: F401
-            from src.Infrastructure.Model.order import Order  # noqa: F401
-            from src.Infrastructure.Model.order_item import OrderItem  # noqa: F401
+            init_db(app)
+
+            with app.app_context():
+                # Importe TODOS os modelos antes do create_all para que as tabelas sejam criadas
+                try:
+                    from src.Infrastructure.Model.user import User  # noqa: F401
+                    from src.Infrastructure.Model.produto import Produto  # noqa: F401
+                    from src.Infrastructure.Model.order import Order  # noqa: F401
+                    from src.Infrastructure.Model.order_item import OrderItem  # noqa: F401
+                except Exception as e:
+                    print(f"Erro ao importar modelos: {e}")
+
+                db.create_all()
+
+                # Criar usuário admin se não existir
+                from src.Application.Service.user_service import UserService
+                try:
+                    UserService.create_admin_if_not_exists()
+                except Exception as e:
+                    print(f"Aviso: não foi possível criar/validar usuário admin: {e}")
+                print("Tabelas criadas e usuário admin verificado!")
         except Exception as e:
-            print(f"Erro ao importar modelos: {e}")
-
-        db.create_all()
-
-        # Criar usuário admin se não existir
-        from src.Application.Service.user_service import UserService
-        UserService.create_admin_if_not_exists()
-        print("Tabelas criadas e usuário admin verificado!")
+            # Não parar a importação em caso de erro de DB durante build; imprimir aviso.
+            print(f"Aviso: falha ao inicializar o banco de dados durante import: {e}")
 
     return app
 
