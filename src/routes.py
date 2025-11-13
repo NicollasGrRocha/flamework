@@ -3,6 +3,7 @@ from src.Application.Controllers.produto_controller import ProdutoController
 from flask import jsonify, make_response, request, session
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from src.Infrastructure.http.whats_app import gerar_codigo, verificar_codigo, ultimo_codigo
+import os
 
 def init_routes(app):    
     @app.route("/", methods=["GET"])
@@ -15,6 +16,28 @@ def init_routes(app):
         return make_response(jsonify({
             "mensagem": "API - OK; Docker - Up",
         }), 200)
+
+    @app.route('/debug/db', methods=['GET'])
+    def debug_db():
+        """Endpoint de debug opcional. Ativado apenas se ENABLE_DEBUG=1 nas variáveis de ambiente.
+
+        Retorna se a aplicação consegue conectar ao banco e se o usuário admin existe.
+        NÃO habilite em produção publicamente sem necessidade.
+        """
+        if os.environ.get('ENABLE_DEBUG') != '1':
+            return jsonify({'error': 'Not found'}), 404
+        try:
+            from src.config.data_base import db
+            from src.Infrastructure.Model.user import User
+            # tenta uma operação simples
+            try:
+                admin = db.session.query(User).filter_by(email='luiz@gmail.com').first()
+                admin_exists = bool(admin)
+                return jsonify({'db_connected': True, 'admin_exists': admin_exists}), 200
+            except Exception as inner:
+                return jsonify({'db_connected': False, 'error': str(inner)}), 200
+        except Exception as e:
+            return jsonify({'db_available': False, 'error': str(e)}), 200
     
     @app.route("/send-code", methods=["POST"])
     def send_code():
