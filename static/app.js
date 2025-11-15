@@ -1,91 +1,99 @@
 let cart = [];
 
-// Funções CRUD
-
+// Carrega lista de produtos da API
 async function carregarProdutos() {
-  // A rota /api/products agora deve retornar os dados do MySQL
-  const res = await fetch("/api/products");
+  try {
+    const res = await fetch("/api/products");
 
-  // Tratamento de erro básico
-  if (!res.ok) {
+    if (!res.ok) {
       document.getElementById("products").innerHTML = "<li>Erro ao carregar produtos.</li>";
       console.error("Erro na API de produtos:", await res.text());
       return;
+    }
+
+    const produtos = await res.json();
+    const lista = document.getElementById("products");
+    lista.innerHTML = "";
+
+    produtos.forEach(p => {
+      const li = document.createElement("li");
+      const preco = parseFloat(p.Preco);
+
+      li.innerHTML = `
+        <span>${p.NomeProduto} - R$${preco.toFixed(2)} (Estoque: ${p.Quantidade})</span>
+        <input type="number" min="1" max="${p.Quantidade}" value="1" id="qtd-${p.IdProduto}">
+        <button onclick="adicionarAoCarrinho(${p.IdProduto})">Adicionar</button>
+      `;
+      lista.appendChild(li);
+    });
+  } catch (error) {
+    console.error("Erro ao carregar produtos:", error);
+    document.getElementById("products").innerHTML = "<li>Erro ao carregar produtos.</li>";
   }
-
-  const produtos = await res.json();
-  const lista = document.getElementById("products");
-  lista.innerHTML = "";
-
-  produtos.forEach(p => {
-    const li = document.createElement("li");
-
-    // O Preco vem como string do MySQL (DECIMAL), o parseFloat garante a conversão
-    const preco = parseFloat(p.Preco);
-
-    li.innerHTML = `
-      <span>${p.NomeProduto} - R$${preco.toFixed(2)} (Estoque: ${p.Quantidade})</span>
-      <input type="number" min="1" max="${p.Quantidade}" value="1" id="qtd-${p.IdProduto}">
-      <button onclick="adicionarAoCarrinho(${p.IdProduto})">Adicionar</button>
-      <button class="delete" onclick="deletarProduto(${p.IdProduto})">Excluir</button>
-      <button onclick="editarProduto(${p.IdProduto}, '${p.NomeProduto}', ${preco}, ${p.Quantidade})">Editar</button>
-    `;
-    lista.appendChild(li);
-  });
 }
 
+// Adiciona item ao carrinho
 function adicionarAoCarrinho(id) {
   const qtdInput = document.getElementById(`qtd-${id}`);
 
-  // Verifica se o elemento existe e se o valor é válido
   if (!qtdInput || qtdInput.value < 1) {
-      alert("Selecione uma quantidade válida!");
-      return;
+    alert("Selecione uma quantidade válida!");
+    return;
   }
 
   const qtd = parseInt(qtdInput.value);
   const item = { IdProduto: id, Quantidade: qtd };
   cart.push(item);
   alert(`Item (ID: ${id}) adicionado ao carrinho! Quantidade: ${qtd}`);
+  atualizarCarrinho();
 }
 
+// Atualiza exibição do carrinho (opcional - para futuro uso)
+function atualizarCarrinho() {
+  console.log("Carrinho atualizado:", cart);
+}
 
+// Finaliza a compra enviando o carrinho para a API
 async function finalizarCompra() {
   if (cart.length === 0) {
     alert("Carrinho vazio!");
     return;
   }
 
-  const res = await fetch("/api/purchase", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cart })
-  });
+  try {
+    const res = await fetch("/api/purchase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cart })
+    });
 
-  const nota = await res.json();
+    const nota = await res.json();
 
-  // Verifica o erro retornado pela API
-  if (res.status !== 200) {
-    alert(nota.error || "Erro desconhecido ao finalizar compra.");
-    return;
+    if (res.status !== 200) {
+      alert(nota.error || "Erro desconhecido ao finalizar compra.");
+      return;
+    }
+
+    // Exibir nota fiscal
+    let html = `<h3>Nota Fiscal</h3><p><strong>Data:</strong> ${nota.data}</p><ul>`;
+    nota.itens.forEach(i => {
+      const subtotal = parseFloat(i.Subtotal);
+      html += `<li>${i.NomeProduto} x${i.Quantidade} - R$${subtotal.toFixed(2)}</li>`;
+    });
+    html += `</ul><p><strong>Total:</strong> R$${nota.total.toFixed(2)}</p>`;
+    html += `<button onclick="imprimirNota()">Imprimir Nota</button>`;
+    document.getElementById("notaFiscal").innerHTML = html;
+
+    cart = [];
+    carregarProdutos();
+    carregarHistorico();
+  } catch (error) {
+    console.error("Erro ao finalizar compra:", error);
+    alert("Erro ao finalizar compra");
   }
-
-  // Exibir nota fiscal atual
-  let html = `<h3>Nota Fiscal</h3><p><strong>Data:</strong> ${nota.data}</p><ul>`;
-  nota.itens.forEach(i => {
-    // Garante que Subtotal é um número antes de usar toFixed
-    const subtotal = parseFloat(i.Subtotal);
-    html += `<li>${i.NomeProduto} x${i.Quantidade} - R$${subtotal.toFixed(2)}</li>`;
-  });
-  html += `</ul><p><strong>Total:</strong> R$${nota.total.toFixed(2)}</p>`;
-  html += `<button onclick="imprimirNota()">Imprimir Nota</button>`;
-  document.getElementById("notaFiscal").innerHTML = html;
-
-  cart = [];
-  carregarProdutos();
-  carregarHistorico(); // Tenta atualizar o histórico
 }
 
+// Imprime a nota fiscal
 function imprimirNota() {
   const conteudo = document.getElementById("notaFiscal").innerHTML;
   const janela = window.open("", "_blank", "width=600,height=700");
@@ -111,87 +119,39 @@ function imprimirNota() {
   janela.print();
 }
 
-
-// Manipulador de formulário para adicionar/editar produtos
-document.getElementById("productForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const id = document.getElementById("IdProduto").value;
-  const produto = {
-    NomeProduto: document.getElementById("NomeProduto").value,
-    Preco: parseFloat(document.getElementById("Preco").value),
-    Quantidade: parseInt(document.getElementById("Quantidade").value)
-  };
-
-  if (isNaN(produto.Preco) || isNaN(produto.Quantidade)) {
-      alert("Preço e Quantidade devem ser números válidos.");
-      return;
-  }
-
-  const url = id ? `/api/products/${id}` : "/api/products";
-  const method = id ? "PUT" : "POST";
-
-  const res = await fetch(url, {
-    method: method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(produto)
-  });
-
-  if (res.ok) {
-      alert(`Produto ${id ? 'atualizado' : 'adicionado'} com sucesso!`);
-  } else {
-      alert("Falha ao salvar produto.");
-  }
-
-
-  document.getElementById("IdProduto").value = ''; // Limpa ID oculto
-  e.target.reset(); // Limpa formulário
-  carregarProdutos();
-});
-
-async function deletarProduto(id) {
-  if (confirm("Deseja excluir este produto?")) {
-    await fetch(`/api/products/${id}`, { method: "DELETE" });
-    carregarProdutos();
-  }
-}
-
-function editarProduto(id, nome, preco, quantidade) {
-  document.getElementById("IdProduto").value = id;
-  document.getElementById("NomeProduto").value = nome;
-  document.getElementById("Preco").value = preco;
-  document.getElementById("Quantidade").value = quantidade;
-}
-
-// Funções de Histórico (Requer a rota /api/history no Flask)
+// Carrega histórico de compras do usuário
 async function carregarHistorico() {
-  // ATENÇÃO: Se você não adicionou a rota /api/history no app.py,
-  // esta função causará um erro 404.
   try {
-      const res = await fetch("/api/history");
+    const res = await fetch("/api/history");
 
-      // Se a rota não existir (404), apenas ignora a listagem do histórico
-      if (!res.ok) return;
+    if (!res.ok) {
+      console.warn("Histórico indisponível (erro " + res.status + ")");
+      return;
+    }
 
-      const historico = await res.json();
-      const lista = document.getElementById("historico");
-      lista.innerHTML = "";
+    const historico = await res.json();
+    const lista = document.getElementById("historico");
+    
+    if (!lista) return; // Se elemento não existe, ignora
+    
+    lista.innerHTML = "";
 
-      historico.forEach(h => {
-        // Isso assume que o objeto 'h' contém 'data', 'total', e 'itens'
-        const li = document.createElement("li");
-        li.innerHTML = `
-          <strong>${h.data}</strong>
-          Total: R$${h.total.toFixed(2)} <br>
-          Itens: ${h.itens.map(i => `${i.NomeProduto} x${i.Quantidade}`).join(", ")}
-        `;
-        lista.appendChild(li);
-      });
-  } catch (e) {
-      console.warn("Rota /api/history indisponível ou erro ao carregar histórico.");
+    historico.forEach(h => {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <strong>${h.data}</strong>
+        Total: R$${h.total.toFixed(2)} <br>
+        Itens: ${h.itens.map(i => `${i.NomeProduto} x${i.Quantidade}`).join(", ")}
+      `;
+      lista.appendChild(li);
+    });
+  } catch (error) {
+    console.warn("Erro ao carregar histórico:", error);
   }
 }
 
-// Inicia o carregamento de dados ao abrir a página
-carregarProdutos();
-// Inicia o carregamento do histórico
-carregarHistorico();
+// Inicializa a página ao carregar
+document.addEventListener("DOMContentLoaded", function() {
+  carregarProdutos();
+  carregarHistorico();
+});
