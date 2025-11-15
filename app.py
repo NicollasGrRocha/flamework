@@ -5,18 +5,25 @@ import bcrypt
 import re
 from mysql.connector import errorcode
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 
 
+# Carregar variáveis de ambiente do arquivo .env quando estiver em desenvolvimento
+load_dotenv()
+
+# Configurações do banco a partir de variáveis de ambiente (útil para deploy em Vercel/Render)
 DB_CONFIG = {
-    'user': 'root',
-    'password': '218101809Luiz.',
-    'host': 'localhost',
-    'database': 'db_projeto'
+    'user': os.environ.get('DB_USER', 'root'),
+    'password': os.environ.get('DB_PASSWORD', ''),
+    'host': os.environ.get('DB_HOST', 'localhost'),
+    'database': os.environ.get('DB_NAME', 'db_projeto')
 }
 
 app = Flask(__name__)
 CORS(app)
-app.secret_key = 'sua_chave_secreta_aqui'
+# Chave secreta para sessões. Em produção defina a variável SECRET_KEY no provedor.
+app.secret_key = os.environ.get('SECRET_KEY', 'sua_chave_secreta_aqui')
 
 
 
@@ -86,7 +93,11 @@ def init_db():
                 Email VARCHAR(255) NOT NULL UNIQUE,
                 Senha VARCHAR(255) NOT NULL,
                 Nome VARCHAR(255) NOT NULL,
-                DataCriacao DATETIME DEFAULT CURRENT_TIMESTAMP
+                DataCriacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+                TipoUsuario ENUM('admin', 'usuario') DEFAULT 'usuario',
+                UltimoAcesso DATETIME,
+                TokenRecuperacao VARCHAR(100),
+                TokenExpiracao DATETIME
             )
         """)
 
@@ -429,6 +440,151 @@ def get_history():
     con.close()
     return jsonify(historico)
 
+@app.route('/profile')
+@requer_login
+def profile():
+    return render_template('profile.html')
+
+@app.route('/api/profile', methods=['GET'])
+@requer_login
+def get_profile():
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT IdUsuario, Email, Nome, DataCriacao, TipoUsuario, UltimoAcesso 
+            FROM usuarios WHERE IdUsuario = %s
+        """, (session['usuario_id'],))
+        
+        usuario = cursor.fetchone()
+        if not usuario:
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+
+        return jsonify({
+            'usuario': {
+                'id': usuario['IdUsuario'],
+                'email': usuario['Email'],
+                'nome': usuario['Nome'],
+                'dataCriacao': usuario['DataCriacao'].isoformat(),
+                'tipo': usuario['TipoUsuario'],
+                'ultimoAcesso': usuario['UltimoAcesso'].isoformat() if usuario['UltimoAcesso'] else None
+            }
+        })
+
+    except Exception as e:
+        print(f"Erro ao buscar perfil: {e}")
+        return jsonify({'error': 'Erro ao buscar perfil'}), 500
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
+
+@app.route('/api/profile', methods=['PUT'])
+@requer_login
+def update_profile():
+    data = request.get_json()
+    nome = data.get('nome')
+    senha_atual = data.get('senhaAtual')
+    nova_senha = data.get('novaSenha')
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        if nome:
+            cursor.execute("UPDATE usuarios SET Nome = %s WHERE IdUsuario = %s",
+                         (nome, session['usuario_id']))
+            session['usuario_nome'] = nome
+
+        if senha_atual and nova_senha:
+            cursor.execute("SELECT Senha FROM usuarios WHERE IdUsuario = %s",
+                         (session['usuario_id'],))
+            usuario = cursor.fetchone()
+
+            if not bcrypt.checkpw(senha_atual.encode('utf-8'),
+                                usuario['Senha'].encode('utf-8')):
+                return jsonify({'error': 'Senha atual incorreta'}), 401
+
+            salt = bcrypt.gensalt()
+            nova_senha_hash = bcrypt.hashpw(nova_senha.encode('utf-8'), salt)
+            cursor.execute("UPDATE usuarios SET Senha = %s WHERE IdUsuario = %s",
+                         (nova_senha_hash, session['usuario_id']))
+
+        conn.commit()
+        return jsonify({'message': 'Perfil atualizado com sucesso'})
+
+    except Exception as e:
+        print(f"Erro ao atualizar perfil: {e}")
+        return jsonify({'error': 'Erro ao atualizar perfil'}), 500
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
+
+@app.route('/api/users', methods=['GET'])
+@requer_login
+@requer_admin
+def list_users():
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT IdUsuario, Email, Nome, DataCriacao, TipoUsuario, UltimoAcesso 
+            FROM usuarios ORDER BY DataCriacao DESC
+        """)
+        
+        usuarios = cursor.fetchall()
+        return jsonify({
+            'usuarios': [{
+                'id': u['IdUsuario'],
+                'email': u['Email'],
+                'nome': u['Nome'],
+                'dataCriacao': u['DataCriacao'].isoformat(),
+                'tipo': u['TipoUsuario'],
+                'ultimoAcesso': u['UltimoAcesso'].isoformat() if u['UltimoAcesso'] else None
+            } for u in usuarios]
+        })
+
+    except Exception as e:
+        print(f"Erro ao listar usuários: {e}")
+        return jsonify({'error': 'Erro ao listar usuários'}), 500
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@requer_login
+@requer_admin
+def delete_user(user_id):
+    if user_id == session['usuario_id']:
+        return jsonify({'error': 'Não é possível excluir seu próprio usuário'}), 400
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM usuarios WHERE IdUsuario = %s", (user_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+
+        return jsonify({'message': 'Usuário excluído com sucesso'})
+
+    except Exception as e:
+        print(f"Erro ao excluir usuário: {e}")
+        return jsonify({'error': 'Erro ao excluir usuário'}), 500
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
 
 if __name__ == "__main__":
     app.run(debug=True)

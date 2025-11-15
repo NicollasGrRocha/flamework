@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Perfil do Usuário - Supermercado Online</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .profile-container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .profile-section {
+            margin-bottom: 30px;
+        }
+        .profile-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .success-message {
+            color: green;
+            margin-bottom: 10px;
+        }
+        .error-message {
+            color: red;
+            margin-bottom: 10px;
+        }
+        .user-info {
+            margin-bottom: 20px;
+        }
+        .user-info p {
+            margin: 5px 0;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('index') }}">Início</a>
+        <a href="{{ url_for('products') }}">Produtos</a>
+        {% if session.get('tipo_usuario') == 'admin' %}
+        <a href="#" onclick="showUsersList()">Gerenciar Usuários</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}">Sair</a>
+    </nav>
+
+    <main>
+        <div class="profile-container">
+            <div class="profile-header">
+                <h2>Perfil do Usuário</h2>
+            </div>
+
+            <div class="profile-section">
+                <h3>Informações Pessoais</h3>
+                <div class="user-info">
+                    <p><strong>Nome:</strong> <span id="userName"></span></p>
+                    <p><strong>Email:</strong> <span id="userEmail"></span></p>
+                    <p><strong>Tipo de Usuário:</strong> <span id="userType"></span></p>
+                    <p><strong>Data de Criação:</strong> <span id="userCreatedAt"></span></p>
+                    <p><strong>Último Acesso:</strong> <span id="userLastAccess"></span></p>
+                </div>
+
+                <form id="updateProfileForm" onsubmit="updateProfile(event)">
+                    <div class="form-group">
+                        <label for="nome">Alterar Nome:</label>
+                        <input type="text" id="nome" name="nome">
+                    </div>
+                    <button type="submit" class="btn-primary">Atualizar Nome</button>
+                </form>
+            </div>
+
+            <div class="profile-section">
+                <h3>Alterar Senha</h3>
+                <form id="changePasswordForm" onsubmit="changePassword(event)">
+                    <div class="form-group">
+                        <label for="senhaAtual">Senha Atual:</label>
+                        <input type="password" id="senhaAtual" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="novaSenha">Nova Senha:</label>
+                        <input type="password" id="novaSenha" required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmarSenha">Confirmar Nova Senha:</label>
+                        <input type="password" id="confirmarSenha" required minlength="6">
+                    </div>
+                    <div id="passwordError" class="error-message"></div>
+                    <button type="submit" class="btn-primary">Alterar Senha</button>
+                </form>
+            </div>
+
+            {% if session.get('tipo_usuario') == 'admin' %}
+            <div id="usersList" class="profile-section" style="display: none;">
+                <h3>Lista de Usuários</h3>
+                <div id="usersTable"></div>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <script>
+        // Carregar informações do perfil
+        async function loadProfile() {
+            try {
+                const response = await fetch('/api/profile');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('userName').textContent = data.usuario.nome;
+                    document.getElementById('userEmail').textContent = data.usuario.email;
+                    document.getElementById('userType').textContent = data.usuario.tipo === 'admin' ? 'Administrador' : 'Usuário';
+                    document.getElementById('userCreatedAt').textContent = new Date(data.usuario.dataCriacao).toLocaleString();
+                    document.getElementById('userLastAccess').textContent = data.usuario.ultimoAcesso ? 
+                        new Date(data.usuario.ultimoAcesso).toLocaleString() : 'Primeiro acesso';
+                } else {
+                    alert('Erro ao carregar perfil: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                alert('Erro ao carregar perfil');
+            }
+        }
+
+        // Atualizar perfil
+        async function updateProfile(event) {
+            event.preventDefault();
+            const nome = document.getElementById('nome').value;
+
+            try {
+                const response = await fetch('/api/profile', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ nome })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Perfil atualizado com sucesso!');
+                    loadProfile();
+                } else {
+                    alert('Erro ao atualizar perfil: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                alert('Erro ao atualizar perfil');
+            }
+        }
+
+        // Alterar senha
+        async function changePassword(event) {
+            event.preventDefault();
+            const senhaAtual = document.getElementById('senhaAtual').value;
+            const novaSenha = document.getElementById('novaSenha').value;
+            const confirmarSenha = document.getElementById('confirmarSenha').value;
+            const errorElement = document.getElementById('passwordError');
+
+            if (novaSenha !== confirmarSenha) {
+                errorElement.textContent = 'As senhas não coincidem';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/profile', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ senhaAtual, novaSenha })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Senha alterada com sucesso!');
+                    document.getElementById('changePasswordForm').reset();
+                    errorElement.textContent = '';
+                } else {
+                    errorElement.textContent = data.error;
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                errorElement.textContent = 'Erro ao alterar senha';
+            }
+        }
+
+        // Listar usuários (apenas para admin)
+        async function showUsersList() {
+            const usersListDiv = document.getElementById('usersList');
+            usersListDiv.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/users');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    let html = '<table border="1" style="width:100%; border-collapse: collapse;">';
+                    html += '<tr><th>Nome</th><th>Email</th><th>Tipo</th><th>Criado em</th><th>Último Acesso</th><th>Ações</th></tr>';
+                    
+                    data.usuarios.forEach(user => {
+                        html += `<tr>
+                            <td>${user.nome}</td>
+                            <td>${user.email}</td>
+                            <td>${user.tipo}</td>
+                            <td>${new Date(user.dataCriacao).toLocaleString()}</td>
+                            <td>${user.ultimoAcesso ? new Date(user.ultimoAcesso).toLocaleString() : 'Nunca'}</td>
+                            <td>
+                                ${user.tipo !== 'admin' ? 
+                                    `<button onclick="deleteUser(${user.id})" class="btn-danger">Excluir</button>` : 
+                                    ''}
+                            </td>
+                        </tr>`;
+                    });
+                    
+                    html += '</table>';
+                    document.getElementById('usersTable').innerHTML = html;
+                } else {
+                    alert('Erro ao carregar lista de usuários: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                alert('Erro ao carregar lista de usuários');
+            }
+        }
+
+        // Excluir usuário
+        async function deleteUser(userId) {
+            if (!confirm('Tem certeza que deseja excluir este usuário?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/users/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Usuário excluído com sucesso!');
+                    showUsersList();
+                } else {
+                    alert('Erro ao excluir usuário: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                alert('Erro ao excluir usuário');
+            }
+        }
+
+        // Carregar perfil ao iniciar a página
+        document.addEventListener('DOMContentLoaded', loadProfile);
+    </script>
+</body>
+</html>
